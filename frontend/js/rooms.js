@@ -169,7 +169,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // COT-580: OAuth Buttons & Errors
   const googleLoginBtn = document.getElementById('googleLoginBtn');
-  const facebookLoginBtn = document.getElementById('facebookLoginBtn');
   const oauthGeneralError = document.getElementById('oauthGeneralError');
   const loginGeneralError = document.getElementById('loginGeneralError');
 
@@ -493,12 +492,15 @@ document.addEventListener('DOMContentLoaded', () => {
       registerConfirmPasswordInput.addEventListener('input', updateRegisterChecklist);
     }
 
-    // COT-580: Sự kiện nút Đăng nhập nhanh Google & Facebook (OAuth2)
+    // COT-580 / SEC-05: Sự kiện nút Đăng nhập nhanh Google (Facebook đã bỏ)
     if (googleLoginBtn) {
+      // SEC-05: chỉ hiện nút Google khi đã cấu hình client id
+      if (getGoogleClientId()) {
+        googleLoginBtn.style.display = 'inline-flex';
+      } else {
+        googleLoginBtn.style.display = 'none';
+      }
       googleLoginBtn.addEventListener('click', () => handleOAuthLogin('google'));
-    }
-    if (facebookLoginBtn) {
-      facebookLoginBtn.addEventListener('click', () => handleOAuthLogin('facebook'));
     }
 
     // COT-585: Sự kiện Hồ sơ cá nhân & Đổi Avatar
@@ -1789,56 +1791,76 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * COT-580: Xử lý Đăng nhập nhanh Google / Facebook OAuth2
+   * SEC-05: Đăng nhập Google qua Google Identity Services (GIS).
+   * Facebook đã bị bỏ. Nếu chưa cấu hình VITE_GOOGLE_CLIENT_ID thì nút Google bị ẩn.
    */
-  async function handleOAuthLogin(provider) {
+  function getGoogleClientId() {
+    const meta = document.querySelector('meta[name="google-client-id"]');
+    const raw = (meta && meta.getAttribute('content')) || '';
+    if (!raw || raw.includes('%VITE_GOOGLE_CLIENT_ID%')) return '';
+    return raw.trim();
+  }
+
+  function showOAuthError(message) {
     if (oauthGeneralError) {
-      oauthGeneralError.textContent = '';
-      oauthGeneralError.style.display = 'none';
+      oauthGeneralError.textContent = message;
+      oauthGeneralError.style.display = 'block';
     }
+  }
 
+  async function completeGoogleLogin(credential) {
     try {
-      const mockOAuthToken = `${provider}_oauth_token_${Date.now()}`;
-      let res;
-      if (authService) {
-        res = await authService.loginWithOAuth(provider, { credential: mockOAuthToken, accessToken: mockOAuthToken });
-      } else {
-        res = {
-          success: true,
-          user: {
-            id: `oauth-${provider}`,
-            username: `${provider}_user`,
-            displayName: provider === 'google' ? 'Kỳ Thủ Google' : 'Kỳ Thủ Facebook',
-            elo: 1000,
-            avatar: provider === 'google' ? 'G' : 'F'
-          }
-        };
-      }
-
+      const res = await authService.loginWithOAuth('google', { credential });
       if (!res.success) {
-        if (oauthGeneralError) {
-          oauthGeneralError.textContent = res.error;
-          oauthGeneralError.style.display = 'block';
-        }
+        showOAuthError(res.error || 'Đăng nhập Google thất bại.');
         return;
       }
 
       apiService.setCurrentUser(res.user);
       updateUserAuthUi();
       closeLoginModal();
-      showToast(res.message || `Đăng nhập qua ${provider} thành công!`, 'success');
+      showToast('Đăng nhập Google thành công!', 'success');
 
-      // Chuyển hướng phòng đang chờ nếu có
       const redirectResult = await apiService.handlePostLoginRoomRedirect();
       if (redirectResult.hasPending && redirectResult.success && redirectResult.room) {
         openRoomModal(redirectResult.room, redirectResult.role, redirectResult.roleMessage);
       }
     } catch (err) {
-      if (oauthGeneralError) {
-        oauthGeneralError.textContent = err.message || 'Lỗi kết nối OAuth.';
-        oauthGeneralError.style.display = 'block';
-      }
+      showOAuthError(err.message || 'Lỗi kết nối OAuth.');
     }
+  }
+
+  function handleOAuthLogin(provider) {
+    if (oauthGeneralError) {
+      oauthGeneralError.textContent = '';
+      oauthGeneralError.style.display = 'none';
+    }
+
+    if (provider !== 'google') return;
+
+    const clientId = getGoogleClientId();
+    if (!clientId) {
+      showOAuthError('Đăng nhập Google chưa được cấu hình (VITE_GOOGLE_CLIENT_ID).');
+      return;
+    }
+
+    const gis = typeof window !== 'undefined' ? window.google : null;
+    if (!gis || !gis.accounts || !gis.accounts.id) {
+      showOAuthError('Chưa tải được Google Identity Services. Vui lòng thử lại sau.');
+      return;
+    }
+
+    gis.accounts.id.initialize({
+      client_id: clientId,
+      callback: (response) => {
+        if (response && response.credential) {
+          completeGoogleLogin(response.credential);
+        } else {
+          showOAuthError('Không nhận được ID token từ Google.');
+        }
+      },
+    });
+    gis.accounts.id.prompt();
   }
 
   /**

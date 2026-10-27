@@ -31,6 +31,14 @@ class MockOAuthVerifier {
     }
 
     if (provider === 'google') {
+      if (token === 'google_token_banned') {
+        return {
+          providerId: 'google_sub_banned',
+          email: 'banned_google@gmail.com',
+          name: 'Kỳ Thủ Bị Khóa',
+          avatarUrl: null,
+        };
+      }
       return {
         providerId: token === 'google_token_2' ? 'google_sub_99999' : 'google_sub_12345',
         email: token === 'google_token_2' ? 'google_user2@gmail.com' : 'kythu_google@gmail.com',
@@ -144,7 +152,7 @@ describe('Nghiệm thu Task COT-573: Xác thực OAuth2 Google & Facebook', () =
       assert.equal(res.user.id, identity.userId);
     });
 
-    test('Tài khoản email đã tồn tại cục bộ: Tự động liên kết OAuth identity vào tài khoản sẵn có', async () => {
+    test('SEC-05: email đã tồn tại với tài khoản mật khẩu thì KHÔNG tự liên kết (409)', async () => {
       // Tạo trước tài khoản cục bộ có email 'google_user2@gmail.com'
       const localUser = await userRepo.create({
         username: 'local_gamer',
@@ -154,33 +162,30 @@ describe('Nghiệm thu Task COT-573: Xác thực OAuth2 Google & Facebook', () =
         eloRating: 1200,
       });
 
-      const res = await oauthUseCase.execute({
-        provider: 'google',
-        credential: 'google_token_2',
-      });
+      await assert.rejects(
+        () => oauthUseCase.execute({ provider: 'google', credential: 'google_token_2' }),
+        (err) => {
+          assert.equal(err.code, 'ACCOUNT_EXISTS_LOGIN_REQUIRED');
+          assert.equal(err.statusCode, 409);
+          return true;
+        },
+      );
 
-      assert.equal(res.success, true);
-      assert.equal(res.user.id, localUser.id);
-      assert.equal(res.user.eloRating, 1200);
-
+      // Không được tạo identity mới cho tài khoản đó
       const identity = await oauthRepo.findByProvider('google', 'google_sub_99999');
-      assert.ok(identity);
-      assert.equal(identity.userId, localUser.id);
+      assert.equal(identity, null);
+      assert.equal(localUser.email, 'google_user2@gmail.com');
     });
 
-    test('Đăng nhập Facebook thành công và tạo tài khoản liên kết', async () => {
-      const res = await oauthUseCase.execute({
-        provider: 'facebook',
-        credential: 'fb_token_valid',
-      });
-
-      assert.equal(res.success, true);
-      assert.equal(res.user.email, 'kythu_fb@facebook.com');
-      assert.equal(res.user.eloRating, 1000);
-
-      const identity = await oauthRepo.findByProvider('facebook', 'fb_id_88888');
-      assert.ok(identity);
-      assert.equal(identity.userId, res.user.id);
+    test('SEC-05: provider facebook bị từ chối (đã bỏ khỏi phạm vi)', async () => {
+      await assert.rejects(
+        () => oauthUseCase.execute({ provider: 'facebook', credential: 'fb_token_valid' }),
+        (err) => {
+          assert.equal(err.code, 'UNSUPPORTED_OAUTH_PROVIDER');
+          assert.equal(err.statusCode, 400);
+          return true;
+        },
+      );
     });
 
     test('Từ chối khi thiếu token hoặc token rỗng (VALIDATION_ERROR)', async () => {
@@ -206,11 +211,23 @@ describe('Nghiệm thu Task COT-573: Xác thực OAuth2 Google & Facebook', () =
     });
 
     test('Từ chối khi tài khoản bị khóa (status != ACTIVE)', async () => {
-      // Đặt trạng thái tài khoản google_token_2 thành BANNED
-      await db.query(`UPDATE users SET status = 'BANNED' WHERE email = 'google_user2@gmail.com'`);
+      // SEC-05: tài khoản bị khóa phải có identity Google sẵn (không còn auto-link theo email)
+      const bannedUser = await userRepo.create({
+        username: 'banned_google_user',
+        displayName: 'Kỳ Thủ Bị Khóa',
+        email: 'banned_google@gmail.com',
+        passwordHash: null,
+        eloRating: 1000,
+        status: 'BANNED',
+      });
+      await oauthRepo.create({
+        userId: bannedUser.id,
+        provider: 'google',
+        providerId: 'google_sub_banned',
+      });
 
       await assert.rejects(
-        () => oauthUseCase.execute({ provider: 'google', credential: 'google_token_2' }),
+        () => oauthUseCase.execute({ provider: 'google', credential: 'google_token_banned' }),
         (err) => {
           assert.equal(err.code, 'ACCOUNT_INACTIVE');
           assert.equal(err.statusCode, 403);
@@ -262,15 +279,9 @@ describe('Nghiệm thu Task COT-573: Xác thực OAuth2 Google & Facebook', () =
       assert.equal(res.body.user.email, 'kythu_google@gmail.com');
     });
 
-    test('POST /api/auth/facebook thành công trả về 200 OK và JWT Token', async () => {
-      const res = await makeRequest('POST', '/api/auth/facebook', {
-        accessToken: 'fb_token_valid',
-      });
-
-      assert.equal(res.statusCode, 200);
-      assert.equal(res.body.success, true);
-      assert.ok(res.body.token);
-      assert.equal(res.body.user.email, 'kythu_fb@facebook.com');
+    test('SEC-05: POST /api/auth/facebook không còn tồn tại (404)', async () => {
+      const res = await makeRequest('POST', '/api/auth/facebook', { accessToken: 'fb_token_valid' });
+      assert.equal(res.statusCode, 404);
     });
 
     test('POST /api/auth/google từ chối token sai trả về 401 Unauthorized', async () => {
@@ -339,7 +350,7 @@ describe('SEC-01: Chặn token mock OAuth khi chưa được bật', () => {
     await withEnv({ ALLOW_MOCK_OAUTH: 'true', NODE_ENV: 'production' }, async () => {
       const verifier = new OAuthVerifierService();
       await assert.rejects(
-        () => verifier.verify('facebook', 'mock_facebook:1:a@b.com:X'),
+        () => verifier.verify('google', 'mock_google:1:a@b.com:X'),
         (err) => err.statusCode === 401,
       );
     });

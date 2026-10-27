@@ -226,35 +226,7 @@ function createAuthHandler({
       return;
     }
 
-    // 6. Đăng nhập Facebook OAuth (COT-573)
-    if (pathname === '/api/auth/facebook') {
-      if (request.method !== 'POST') {
-        sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận POST.' });
-        return;
-      }
-
-      let payload;
-      try {
-        payload = await parseJsonBody(request);
-      } catch (err) {
-        sendJson(response, 400, { error: err.message });
-        return;
-      }
-
-      try {
-        const result = await oauthLoginUseCase.execute({
-          provider: 'facebook',
-          credential: payload.accessToken || payload.token || payload.credential,
-          redirectUrl: payload.redirectUrl,
-        });
-        sendJson(response, 200, result);
-      } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
-      }
-      return;
-    }
-
-    // 7. Lấy thông tin phiên hiện tại (Protected API - COT-572)
+    // 6. Lấy thông tin phiên hiện tại (Protected API - COT-572)
     if (pathname === '/api/auth/me') {
       if (request.method !== 'GET') {
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận GET.' });
