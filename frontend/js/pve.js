@@ -70,7 +70,7 @@
 
   class PveApiService {
     constructor(options = {}) {
-      this.baseUrl = options.baseUrl || 'http://localhost:5000/api/pve';
+      this.baseUrl = options.baseUrl || '/api/pve';
       this.isCreating = false;
       this.currentMatch = null;
       this.subscribers = [];

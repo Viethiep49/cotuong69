@@ -5,7 +5,8 @@
 
 import { TokenStorage } from '../storage/tokenStorage';
 
-const BASE_URL = import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
+// FE-09: đường dẫn tương đối, dev đi qua proxy Vite
+const BASE_URL = import.meta.env?.VITE_API_URL || '/api';
 
 export class AuthApi {
   static async register({ username, displayName, email, password }) {

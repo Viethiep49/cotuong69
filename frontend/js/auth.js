@@ -345,7 +345,7 @@ class TokenStorageService {
  */
 class AuthService {
   constructor(options = {}) {
-    this.baseUrl = options.baseUrl || (typeof window !== 'undefined' && window.VITE_API_URL ? window.VITE_API_URL : 'http://localhost:5000/api');
+    this.baseUrl = options.baseUrl || (typeof window !== 'undefined' && window.VITE_API_URL ? window.VITE_API_URL : '/api');
     this.tokenStorage = options.tokenStorage || new TokenStorageService();
     this.fetchImpl = options.fetchImpl !== undefined
       ? options.fetchImpl
@@ -688,7 +688,7 @@ class AuthService {
  */
 class UserProfileService {
   constructor(options = {}) {
-    this.baseUrl = options.baseUrl || (typeof window !== 'undefined' && window.VITE_API_URL ? window.VITE_API_URL : 'http://localhost:5000/api');
+    this.baseUrl = options.baseUrl || (typeof window !== 'undefined' && window.VITE_API_URL ? window.VITE_API_URL : '/api');
     this.tokenStorage = options.tokenStorage || new TokenStorageService();
     this.fetchImpl = options.fetchImpl !== undefined
       ? options.fetchImpl
@@ -863,7 +863,7 @@ class UserProfileService {
  */
 class PasswordResetService {
   constructor(options = {}) {
-    this.baseUrl = options.baseUrl || (typeof window !== 'undefined' && window.VITE_API_URL ? window.VITE_API_URL : 'http://localhost:5000/api');
+    this.baseUrl = options.baseUrl || (typeof window !== 'undefined' && window.VITE_API_URL ? window.VITE_API_URL : '/api');
     this.fetchImpl = options.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
   }
 

@@ -1,14 +1,20 @@
-const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api')
-  .replace(/\/+$/, '');
+// FE-09: mặc định dùng đường dẫn tương đối (dev đi qua proxy của Vite)
+const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
+
+function apiOrigin() {
+  if (/^https?:\/\//i.test(apiBaseUrl)) return apiBaseUrl;
+  const origin = typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost:3000';
+  return `${origin}${apiBaseUrl.startsWith('/') ? '' : '/'}${apiBaseUrl}`;
+}
 
 export function matchWebSocketUrl(matchId) {
-  const url = new URL(`${apiBaseUrl}/matches/${encodeURIComponent(matchId)}/ws`);
+  const url = new URL(`${apiOrigin()}/matches/${encodeURIComponent(matchId)}/ws`);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
 }
 
 export async function fetchMatch(matchId, { signal } = {}) {
-  const response = await fetch(`${apiBaseUrl}/matches/${encodeURIComponent(matchId)}`, {
+  const response = await fetch(`${apiOrigin()}/matches/${encodeURIComponent(matchId)}`, {
     method: 'GET',
     headers: { Accept: 'application/json' },
     signal,
