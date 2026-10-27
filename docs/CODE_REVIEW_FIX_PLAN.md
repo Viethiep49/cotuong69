@@ -334,7 +334,7 @@ Không có `process.on('unhandledRejection'|'uncaughtException')`, không có `w
 
 ## PHỤ LỤC B — Checklist tiến độ
 - [x] SEC-01 · [x] SEC-02 · [x] SEC-03 · [x] SEC-04
-- [x] SEC-05 · [x] BE-01 · [x] BE-02 · [x] BE-03 · [x] BE-04 · [x] BE-05 · [x] BE-06 · [x] BE-07 · [ ] BE-08 · [ ] BE-09 · [ ] BE-10 · [x] BE-11
+- [x] SEC-05 · [x] BE-01 · [x] BE-02 · [x] BE-03 · [x] BE-04 · [x] BE-05 · [x] BE-06 · [x] BE-07 · [ ] BE-08 · [x] BE-09 · [x] BE-10 · [x] BE-11
 - [ ] FE-01 · [ ] FE-02 · [ ] FE-03 · [ ] FE-04 · [ ] FE-05 · [ ] FE-06 · [ ] FE-07 · [ ] FE-08 · [ ] FE-09 · [ ] FE-10 · [ ] FE-11
 - [ ] BE-12 · [ ] BE-13 · [ ] BE-14 · [ ] BE-15 · [ ] BE-16 · [ ] BE-17 · [ ] BE-18 · [ ] BE-19 · [ ] BE-20
 - [ ] CLEAN-01 · [ ] CLEAN-02 · [ ] CLEAN-03 · [ ] CLEAN-04 · [ ] CLEAN-05
