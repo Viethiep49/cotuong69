@@ -7,6 +7,19 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert');
 const { RoomApiService, ROOM_STATUS } = require('../js/api.js');
 
+// FE-03: mặc định không còn user mock -> test nào tạo phòng phải đăng nhập trước
+function loginAs(api, overrides = {}) {
+  api.setCurrentUser({
+    id: 'user-test-01',
+    username: 'tester',
+    displayName: 'Người Kiểm Thử',
+    elo: 1000,
+    avatar: '測',
+    ...overrides,
+  });
+  return api;
+}
+
 describe('Nghiệm thu Task COT-597: Giao diện Danh sách phòng và Tìm kiếm bằng mã 6 số', () => {
 
   // AC 1: Danh sách hiển thị đúng các Room Public và trạng thái
@@ -161,6 +174,7 @@ describe('Nghiệm thu Task COT-598: Code Modal Tạo phòng chơi (Công khai /
       realtimeEvent = event;
     });
 
+    loginAs(api);
     const res = await api.createRoom({
       name: 'Kỳ Phùng Địch Thủ',
       isPrivate: false
@@ -187,6 +201,7 @@ describe('Nghiệm thu Task COT-598: Code Modal Tạo phòng chơi (Công khai /
   test('AC 1.2: Tạo phòng Riêng tư thành công, có mật khẩu tùy chọn và ẩn khỏi danh sách Public Rooms', async () => {
     const api = new RoomApiService();
 
+    loginAs(api);
     const res = await api.createRoom({
       name: 'Phòng Thi Đấu Kín',
       isPrivate: true,
@@ -211,6 +226,7 @@ describe('Nghiệm thu Task COT-598: Code Modal Tạo phòng chơi (Công khai /
     const api = new RoomApiService();
 
     // Để trống chuỗi rỗng
+    loginAs(api);
     await assert.rejects(
       async () => { await api.createRoom({ name: '' }); },
       { message: 'Tên phòng không được để trống.', code: 'INVALID_NAME' }
@@ -235,6 +251,7 @@ describe('Nghiệm thu Task COT-598: Code Modal Tạo phòng chơi (Công khai /
 
   test('AC 2.2: Chặn và từ chối khi Tên Room có độ dài không hợp lệ (< 3 hoặc > 50 ký tự)', async () => {
     const api = new RoomApiService();
+    loginAs(api);
 
     // Dưới 3 ký tự
     await assert.rejects(
@@ -265,6 +282,7 @@ describe('Nghiệm thu Task COT-598: Code Modal Tạo phòng chơi (Công khai /
   test('AC 3.1: Đảm bảo mỗi lần tạo phòng thành công sinh ra 1 phòng duy nhất với mã code riêng biệt', async () => {
     const api = new RoomApiService();
 
+    loginAs(api);
     const [roomA, roomB] = await Promise.all([
       api.createRoom({ name: 'Bàn Đấu Alpha' }),
       api.createRoom({ name: 'Bàn Đấu Beta' })
@@ -279,6 +297,7 @@ describe('Nghiệm thu Task COT-598: Code Modal Tạo phòng chơi (Công khai /
   test('AC 4.1: Người tạo phòng được gán vai trò Chủ phòng (HOST) và ghế Đối thủ đang trống', async () => {
     const api = new RoomApiService();
 
+    loginAs(api);
     const res = await api.createRoom({ name: 'Giao Lưu Cao Thủ' });
 
     assert.strictEqual(res.role, 'HOST');
@@ -292,6 +311,7 @@ describe('Nghiệm thu Task COT-598: Code Modal Tạo phòng chơi (Công khai /
   test('AC 4.2: Mã phòng tạo ra phải đúng định dạng 6 chữ số và tìm kiếm/tham gia lại được', async () => {
     const api = new RoomApiService();
 
+    loginAs(api);
     const created = await api.createRoom({ name: 'Kiểm tra mã phòng 6 số' });
     const code = created.room.code;
 
@@ -386,6 +406,7 @@ describe('Nghiệm thu Task COT-599: Giao diện Danh sách bạn bè và nút C
     const api = new RoomApiService();
 
     // Tạo 1 phòng cờ mới
+    loginAs(api);
     const created = await api.createRoom({ name: 'Bàn Đấu Mời Bạn' });
     const roomCode = created.room.code;
 

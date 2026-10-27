@@ -248,8 +248,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const sessionRes = await authService.restoreSession();
         if (sessionRes && sessionRes.isAuthenticated && sessionRes.user) {
           apiService.setCurrentUser(sessionRes.user);
+        } else {
+          // FE-03: không có phiên hợp lệ -> coi là khách
+          apiService.setCurrentUser(null);
         }
-      } catch {}
+      } catch {
+        apiService.setCurrentUser(null);
+      }
     }
     updateUserAuthUi();
     await loadRooms();
@@ -1500,6 +1505,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const rawName = roomNameInput ? roomNameInput.value.trim() : '';
 
     // Tiêu chí 2: Không gửi request nếu Tên Room để trống
+    // FE-03: bắt buộc đăng nhập mới được tạo phòng
+    if (!apiService.getCurrentUser()) {
+      closeCreateRoomModal();
+      openLoginModal();
+      showToast('Vui lòng đăng nhập để tạo phòng.', 'warning');
+      return;
+    }
+
     if (!rawName) {
       showCreateRoomError('Tên phòng không được để trống.');
       roomNameInput?.focus();

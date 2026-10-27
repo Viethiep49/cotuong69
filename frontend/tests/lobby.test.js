@@ -19,14 +19,16 @@ describe('Nghiệm thu Task COT-584: Code layout tổng thể Sảnh chờ (Lobb
 
   // AC 1: Header Sảnh Chờ và thông tin người dùng (Tên, Elo 1000, Avatar, Đăng xuất)
   describe('AC 1: Header Sảnh Chờ - Tên người chơi & Điểm Elo 1000', () => {
-    test('AC 1.1: Trả về thông tin người dùng mặc định với Elo 1000', () => {
+    test('FE-03: mặc định KHÔNG có ai đăng nhập (bỏ user mock hardcode)', () => {
       const api = new RoomApiService();
-      const user = api.getCurrentUser();
+      assert.strictEqual(api.getCurrentUser(), null, 'mở trang phải là khách, không tự đăng nhập');
 
-      assert.ok(user, 'Người dùng phải được khởi tạo trong session');
-      assert.strictEqual(user.displayName, 'Nguyễn Tấn Sang', 'Hiển thị đúng tên người chơi');
-      assert.strictEqual(user.elo, 1000, 'Điểm Elo mặc định của người chơi mới phải là 1000');
-      assert.strictEqual(user.avatar, '桑', 'Có avatar đại diện');
+      api.setCurrentUser({ id: 'u1', username: 'tester', displayName: 'Nguyễn Tấn Sang', elo: 1000, avatar: '桑' });
+      const user = api.getCurrentUser();
+      assert.ok(user, 'sau khi đăng nhập phải có user');
+      assert.strictEqual(user.displayName, 'Nguyễn Tấn Sang');
+      assert.strictEqual(user.elo, 1000);
+      assert.strictEqual(user.avatar, '桑');
     });
 
     test('AC 1.2: Fallback về Elo 1000 khi user object không có trường elo hoặc elo null', () => {
@@ -59,7 +61,9 @@ describe('Nghiệm thu Task COT-584: Code layout tổng thể Sảnh chờ (Lobb
 
     test('AC 1.4: Đăng xuất tài khoản xóa session người dùng và cập nhật trạng thái', () => {
       const api = new RoomApiService();
-      assert.ok(api.getCurrentUser(), 'Ban đầu đang có phiên đăng nhập');
+      // FE-03: mặc định là khách, phải đăng nhập trước khi kiểm tra đăng xuất
+      api.setCurrentUser({ id: 'u2', username: 'tester', displayName: 'Tester', elo: 1000 });
+      assert.ok(api.getCurrentUser(), 'Sau khi đăng nhập phải có phiên');
 
       api.setCurrentUser(null);
       assert.strictEqual(api.getCurrentUser(), null, 'Sau khi đăng xuất, getCurrentUser phải trả về null');

@@ -132,33 +132,35 @@ class RoomApiService {
     this.friendsStore = JSON.parse(JSON.stringify(INITIAL_FRIENDS));
     this.pendingInvitations = new Map(); // invitationId -> invData
     this.realtimeListeners = [];
-    // Thông tin người dùng hiện tại (mặc định đã đăng nhập theo session)
-    this.currentUser = {
-      id: 'user-sang-01',
-      username: 'nguyen_tan_sang',
-      displayName: 'Nguyễn Tấn Sang',
-      elo: 1000,
-      avatar: '桑',
-      isLoggedIn: true
-    };
+    // FE-03: mặc định KHÔNG có ai đăng nhập. Trước đây hardcode user
+    // "Nguyễn Tấn Sang" với isLoggedIn: true -> mở trang là thấy như đã đăng nhập.
+    this.currentUser = null;
   }
 
   /**
    * Lấy thông tin người dùng đang đăng nhập
    */
   getCurrentUser() {
-    if (!this.currentUser || !this.currentUser.isLoggedIn) return null;
+    // FE-03: chỉ cần có user là coi như đã đăng nhập; trước đây còn đòi field
+    // isLoggedIn nên user thật trả về từ API luôn bị coi là khách.
+    if (!this.currentUser) return null;
+    const elo = Number.isFinite(Number(this.currentUser.elo))
+      ? Number(this.currentUser.elo)
+      : (Number.isFinite(Number(this.currentUser.eloRating)) ? Number(this.currentUser.eloRating) : 1000);
     return {
       ...this.currentUser,
-      elo: Number.isFinite(this.currentUser.elo) ? this.currentUser.elo : 1000
+      isLoggedIn: true,
+      elo
     };
   }
 
   /**
-   * Thiết lập thông tin người dùng (cho việc test / mock session)
+   * Thiết lập thông tin người dùng (null = đăng xuất / chưa đăng nhập)
    */
   setCurrentUser(user) {
-    this.currentUser = user;
+    this.currentUser = user
+      ? { ...user, isLoggedIn: true }
+      : null;
   }
 
   /**
