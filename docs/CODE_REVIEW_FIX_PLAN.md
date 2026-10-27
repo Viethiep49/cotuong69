@@ -336,7 +336,7 @@ Không có `process.on('unhandledRejection'|'uncaughtException')`, không có `w
 - [x] SEC-01 · [x] SEC-02 · [x] SEC-03 · [x] SEC-04
 - [x] SEC-05 · [x] BE-01 · [x] BE-02 · [x] BE-03 · [x] BE-04 · [x] BE-05 · [x] BE-06 · [x] BE-07 · [x] BE-08 · [x] BE-09 · [x] BE-10 · [x] BE-11
 - [ ] FE-01 · [ ] FE-02 · [x] FE-03 · [x] FE-04 · [ ] FE-05 · [ ] FE-06 · [ ] FE-07 · [ ] FE-08 · [x] FE-09 · [ ] FE-10 · [x] FE-11
-- [ ] BE-12 · [ ] BE-13 · [ ] BE-14 · [ ] BE-15 · [ ] BE-16 · [ ] BE-17 · [ ] BE-18 · [ ] BE-19 · [ ] BE-20
+- [ ] BE-12 · [x] BE-13 · [ ] BE-14 · [ ] BE-15 · [ ] BE-16 · [ ] BE-17 · [ ] BE-18 · [ ] BE-19 · [ ] BE-20
 - [ ] CLEAN-01 · [ ] CLEAN-02 · [ ] CLEAN-03 · [ ] CLEAN-04 · [ ] CLEAN-05
 
 **Lưu ý vận hành**: vì secret JWT mặc định đã công khai trong source, sau khi xong SEC-02 phải đặt `JWT_SECRET` mới trên mọi môi trường (mọi token cũ sẽ mất hiệu lực — đây là điều mong muốn). Nếu repo GitHub từng public hoặc có PR từ fork chạy qua workflow `ai-pr-test.yml`, hãy **xoay vòng (rotate) `JIRA_API_TOKEN` và `GEMINI_API_KEY`**.
