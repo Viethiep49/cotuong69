@@ -15,6 +15,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { assertJwtSecretConfigured } = require('./application/services/tokenService');
 
+/**
+ * BE-11: endpoint trận mẫu COT-615 không xác thực -> chỉ bật khi ENABLE_DEMO_MATCH=true.
+ * Mặc định TẮT.
+ */
+function demoMatchEnabled() {
+  return process.env.ENABLE_DEMO_MATCH === 'true';
+}
+
 // SEC-03: không để một promise bị reject làm chết cả server
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason);
@@ -64,6 +72,12 @@ function createServer(options = {}) {
     if (pathname.startsWith('/uploads/')) {
       return serveUpload(pathname, res);
     }
+    if (!demoMatchEnabled()) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Route not found' }));
+      return;
+    }
+
     return matchesHandler(req, res);
   };
 
@@ -193,7 +207,7 @@ function createServer(options = {}) {
     }
 
     const matchRoute = pathname.match(/^\/api\/matches\/([^/]+)\/ws$/);
-    if (!matchRoute) {
+    if (!matchRoute || !demoMatchEnabled()) {
       socket.destroy();
       return;
     }
