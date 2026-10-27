@@ -5,6 +5,34 @@ const { verifyAccessToken } = require('../../application/services/tokenService')
 const { safeDecode } = require('../../core/safeDecode');
 const { roomManager: defaultRoomManager } = require('../../infrastructure/database/repositories/RoomManager');
 
+/**
+ * BE-07: kiểm tra dữ liệu signaling WebRTC trước khi relay.
+ */
+function isValidSdp(sdp) {
+  // Chấp nhận cả chuỗi SDP thuần và RTCSessionDescription { type, sdp }
+  if (typeof sdp === 'string') return sdp.length > 0 && sdp.length < 20000;
+  if (sdp && typeof sdp === 'object' && typeof sdp.sdp === 'string') {
+    return sdp.sdp.length > 0 && sdp.sdp.length < 20000;
+  }
+  return false;
+}
+
+function isValidCandidate(candidate) {
+  if (typeof candidate === 'string') return candidate.length > 0 && candidate.length < 4000;
+  if (!candidate || typeof candidate !== 'object') return false;
+  if (typeof candidate.candidate !== 'string' || candidate.candidate.length >= 4000) return false;
+  return true;
+}
+
+/**
+ * BE-07: message signaling phải trỏ đúng cuộc gọi đang diễn ra.
+ */
+function isSameCall(payload, room) {
+  if (!room || !room.videoCall) return false;
+  if (payload.callId === undefined || payload.callId === null || payload.callId === '') return true;
+  return String(payload.callId) === String(room.videoCall.callId);
+}
+
 class RoomHub {
   constructor({
     roomManager = defaultRoomManager,
@@ -13,7 +41,7 @@ class RoomHub {
     heartbeatIntervalMs = 5000,
     heartbeatTimeoutMs = 10000,
     reconnectCountdownSeconds = 60,
-    enableHeartbeat = false,
+    enableHeartbeat = true,
   } = {}) {
     this.roomManager = roomManager;
     this.tokenService = tokenService;
@@ -30,7 +58,8 @@ class RoomHub {
     this.heartbeatTimeoutMs = Number(heartbeatTimeoutMs);
     this.reconnectCountdownSeconds = Number(reconnectCountdownSeconds);
 
-    this.wss = new WebSocketServer({ noServer: true });
+    // BE-07: giới hạn payload 64KB (trước đây mặc định 100MB)
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
     // Ánh xạ ConnectionId <-> UserId và Socket metadata
     this.clients = new Map(); // socket -> { connectionId, userId, user, roomCode, role, side, lastSeen, lastPong, connectedAt }
@@ -44,6 +73,8 @@ class RoomHub {
     this.disconnectTimers = new Map(); // roomCode -> { interval, userId, side }
     // BE-05: timer đồng hồ lượt đi của từng phòng
     this.turnTimers = new Map(); // roomCode -> Timeout
+    // BE-07: rate limit chat theo từng socket (5 tin / 3 giây)
+    this.chatRate = new Map(); // socket -> number[] (timestamps)
     this.heartbeatTimer = null;
 
     this.setupWss();
@@ -174,6 +205,11 @@ class RoomHub {
       socket.on('error', (err) => {
         console.warn('[WS] Lỗi socket:', err && err.message);
         try {
+          // BE-07: payload vượt giới hạn -> đóng đúng mã 1009 thay vì ngắt thô (1006)
+          if (err && (err.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH' || /max payload/i.test(err.message || ''))) {
+            socket.close(1009, 'Message too big');
+            return;
+          }
           socket.terminate();
         } catch {
           /* ignore */
@@ -500,6 +536,10 @@ class RoomHub {
       try {
         const targetUserId = Number(payload.targetUserId);
 
+        // BE-07: kiểm tra quyền kick TRƯỚC — nếu không phải host thì không được
+        // kết thúc cuộc gọi của người khác
+        const kickResult = room.kickParticipant(meta.userId, targetUserId);
+
         // Hủy cuộc gọi Video Call nếu người bị kick đang trong cuộc gọi (COT-626)
         if (room.videoCall && (Number(room.videoCall.callerId) === targetUserId || Number(room.videoCall.calleeId) === targetUserId)) {
           const callId = room.videoCall.callId;
@@ -517,8 +557,6 @@ class RoomHub {
           this.sendToUserInRoom(room.code, callerId, endMsg);
           this.sendToUserInRoom(room.code, calleeId, endMsg);
         }
-
-        const kickResult = room.kickParticipant(meta.userId, targetUserId);
 
         this.broadcastToRoom(room.code, {
           type: 'UserKicked',
@@ -560,6 +598,25 @@ class RoomHub {
           type: 'error',
           code: 'EMPTY_MESSAGE',
           message: 'Không thể gửi tin nhắn rỗng hoặc chỉ chứa khoảng trắng.',
+        });
+        return;
+      }
+
+      // BE-07: giới hạn độ dài + chống spam (5 tin / 3 giây mỗi socket)
+      if (text.trim().length > 500) {
+        this.send(socket, {
+          type: 'error',
+          code: 'MESSAGE_TOO_LONG',
+          message: 'Tin nhắn tối đa 500 ký tự.',
+        });
+        return;
+      }
+
+      if (!this.isChatAllowed(socket)) {
+        this.send(socket, {
+          type: 'error',
+          code: 'CHAT_RATE_LIMITED',
+          message: 'Bạn gửi tin nhắn quá nhanh, vui lòng thử lại sau vài giây.',
         });
         return;
       }
@@ -695,11 +752,18 @@ class RoomHub {
         ? room.videoCall.calleeId
         : room.videoCall.callerId;
 
+      // BE-07: chỉ relay SDP hợp lệ và đúng cuộc gọi hiện tại
+      const offerSdp = payload.sdp || payload.offer;
+      if (!isValidSdp(offerSdp) || !isSameCall(payload, room)) {
+        this.send(socket, { type: 'error', code: 'INVALID_SDP', message: 'Dữ liệu SDP không hợp lệ.' });
+        return;
+      }
+
       this.sendToUserInRoom(room.code, targetId, {
         type: 'CallOffer',
         callId: room.videoCall.callId,
         fromUserId: meta.userId,
-        sdp: payload.sdp || payload.offer,
+        sdp: offerSdp,
         roomCode: room.code,
       });
       return;
@@ -719,11 +783,18 @@ class RoomHub {
         ? room.videoCall.calleeId
         : room.videoCall.callerId;
 
+      // BE-07: chỉ relay SDP hợp lệ và đúng cuộc gọi hiện tại
+      const answerSdp = payload.sdp || payload.answer;
+      if (!isValidSdp(answerSdp) || !isSameCall(payload, room)) {
+        this.send(socket, { type: 'error', code: 'INVALID_SDP', message: 'Dữ liệu SDP không hợp lệ.' });
+        return;
+      }
+
       this.sendToUserInRoom(room.code, targetId, {
         type: 'CallAnswer',
         callId: room.videoCall.callId,
         fromUserId: meta.userId,
-        sdp: payload.sdp || payload.answer,
+        sdp: answerSdp,
         roomCode: room.code,
       });
       return;
@@ -742,6 +813,12 @@ class RoomHub {
       const targetId = Number(meta.userId) === Number(room.videoCall.callerId)
         ? room.videoCall.calleeId
         : room.videoCall.callerId;
+
+      // BE-07: validate ICE candidate + đúng cuộc gọi
+      if (!isValidCandidate(payload.candidate) || !isSameCall(payload, room)) {
+        this.send(socket, { type: 'error', code: 'INVALID_CANDIDATE', message: 'ICE candidate không hợp lệ.' });
+        return;
+      }
 
       this.sendToUserInRoom(room.code, targetId, {
         type: 'CallCandidate',
@@ -790,6 +867,7 @@ class RoomHub {
     if (!meta) return;
 
     this.clients.delete(socket);
+    if (this.chatRate) this.chatRate.delete(socket);
 
     // Xóa khỏi userSockets
     if (this.userSockets.has(meta.userId)) {
@@ -1001,6 +1079,23 @@ class RoomHub {
         this.disconnectTimers.delete(key);
       }
     }
+  }
+
+  /**
+   * BE-07: token-bucket đơn giản cho chat — tối đa 5 tin trong 3 giây / socket.
+   */
+  isChatAllowed(socket) {
+    const now = Date.now();
+    const windowMs = 3000;
+    const limit = 5;
+    const previous = (this.chatRate.get(socket) || []).filter((t) => now - t < windowMs);
+    if (previous.length >= limit) {
+      this.chatRate.set(socket, previous);
+      return false;
+    }
+    previous.push(now);
+    this.chatRate.set(socket, previous);
+    return true;
   }
 
   /**
@@ -1378,4 +1473,8 @@ const defaultRoomHub = new RoomHub();
 module.exports = {
   RoomHub,
   roomHub: defaultRoomHub,
+  // BE-07: export để test được phần validate signaling
+  isValidSdp,
+  isValidCandidate,
+  isSameCall,
 };

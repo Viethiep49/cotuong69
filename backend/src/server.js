@@ -32,7 +32,8 @@ function createServer(options = {}) {
   let match = options.match || null;
   const now = options.now || (() => Date.now());
   const clients = new Map();
-  const webSockets = new WebSocketServer({ noServer: true });
+  // BE-07: giới hạn payload 64KB cho WS trận mẫu
+  const webSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
   const roomHub = options.roomHub || defaultRoomHub;
   const getCurrentMatch = () => {
     if (!match) match = createCot615Match(now());
@@ -266,6 +267,8 @@ function createServer(options = {}) {
 
   server.on('close', () => {
     clearInterval(clockTimer);
+    // BE-07: dọn heartbeat/timer của roomHub khi server đóng
+    if (roomHub && typeof roomHub.close === 'function') roomHub.close();
     for (const client of webSockets.clients) client.close();
     webSockets.close();
   });
