@@ -100,7 +100,12 @@ describe('REV-04: dò mã phòng qua WS upgrade bị đếm', () => {
     const tokenService = require('../src/application/services/tokenService');
 
     const roomManager = new RoomManager({ sweepIntervalMs: 0 });
-    const hub = new RoomHub({ roomManager, tokenService });
+    const hub = new RoomHub({
+      roomManager,
+      tokenService,
+      // REV-05: WS kiểm tra phiên trong DB -> repo giả luôn ACTIVE
+      userRepository: { findById: async (id) => ({ id, status: 'ACTIVE', passwordChangedAt: null }) },
+    });
     const token = tokenService.generateAccessToken({ id: 12345, username: 'rev04', role: 'PLAYER' });
 
     function fakeSocket() {
@@ -123,8 +128,8 @@ describe('REV-04: dò mã phòng qua WS upgrade bị đếm', () => {
     const key = 'room-lookup:10.1.2.3';
     for (let i = 0; i < 30; i += 1) {
       const socket = fakeSocket();
-      hub.handleUpgrade(request, socket, Buffer.alloc(0));
-      assert.equal(socket.written[0].includes('404'), true, 'mã không tồn tại phải trả 404');
+      await hub.handleUpgrade(request, socket, Buffer.alloc(0));
+      assert.equal(String(socket.written[0] || '').includes('404'), true, 'mã không tồn tại phải trả 404');
     }
 
     assert.equal(roomLookupLimiter.isBlocked(key), true, 'sau 30 lần dò mã sai phải bị chặn');
@@ -139,7 +144,11 @@ describe('REV-04: dò mã phòng qua WS upgrade bị đếm', () => {
 
     const roomManager = new RoomManager({ sweepIntervalMs: 0 });
     const room = roomManager.createRoom({ hostUser: { id: 7, username: 'host', displayName: 'Host' }, name: 'rev04', isPrivate: false });
-    const hub = new RoomHub({ roomManager, tokenService });
+    const hub = new RoomHub({
+      roomManager,
+      tokenService,
+      userRepository: { findById: async (id) => ({ id, status: 'ACTIVE', passwordChangedAt: null }) },
+    });
     hub.wss = { handleUpgrade: (_req, _sock, _head, cb) => cb({ on() {}, send() {}, close() {} }), emit() {} };
 
     const token = tokenService.generateAccessToken({ id: 7, username: 'host', role: 'PLAYER' });
@@ -150,7 +159,7 @@ describe('REV-04: dò mã phòng qua WS upgrade bị đếm', () => {
     };
 
     const socket = { destroyed: false, written: [], write(c) { this.written.push(String(c)); }, destroy() { this.destroyed = true; }, on() {}, setTimeout() {} };
-    hub.handleUpgrade(request, socket, Buffer.alloc(0));
+    await hub.handleUpgrade(request, socket, Buffer.alloc(0));
 
     assert.equal(roomLookupLimiter.isBlocked('room-lookup:10.1.2.4'), false);
     assert.equal(roomLookupLimiter.countOf('room-lookup:10.1.2.4'), 0, 'không được đếm lượt thành công');

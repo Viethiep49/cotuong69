@@ -256,7 +256,18 @@ class RoomHub {
     });
   }
 
-  handleUpgrade(request, socket, head) {
+  /**
+   * REV-05: kiểm tra phiên (status ACTIVE + token chưa bị thu hồi) cho WebSocket.
+   * @param {{id:number, iat?:number}} decodedUser
+   * @returns {Promise<object|null>}
+   */
+  async ensureSessionActive(decodedUser) {
+    // eslint-disable-next-line global-require
+    const { ensureSessionActive } = require('../http/middlewares/authMiddleware');
+    return ensureSessionActive(decodedUser, this.userRepository);
+  }
+
+  async handleUpgrade(request, socket, head) {
     let urlObj;
     try {
       urlObj = new URL(request.url, 'http://localhost');
@@ -300,6 +311,23 @@ class RoomHub {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
+    }
+
+    // REV-05: WS trước đây chỉ verify chữ ký -> token đã bị thu hồi (đổi mật khẩu)
+    // hoặc của tài khoản bị khoá vẫn vào phòng chơi được.
+    if (this.userRepository && typeof this.userRepository.findById === 'function') {
+      try {
+        await this.ensureSessionActive(decodedUser);
+      } catch (err) {
+        const status = Number(err && err.statusCode) === 403 ? '403 Forbidden' : '401 Unauthorized';
+        try {
+          socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
+        } catch {
+          /* ignore */
+        }
+        socket.destroy();
+        return;
+      }
     }
 
     if (!roomCode) {

@@ -219,7 +219,15 @@ function createServer(options = {}) {
         return;
       }
 
-      roomHub.handleUpgrade(request, socket, head);
+      // REV-05: handleUpgrade nay là async (kiểm tra phiên trong DB)
+      Promise.resolve(roomHub.handleUpgrade(request, socket, head)).catch((err) => {
+        console.error('[WS] lỗi upgrade:', err);
+        try {
+          socket.destroy();
+        } catch {
+          /* ignore */
+        }
+      });
       return;
     }
 

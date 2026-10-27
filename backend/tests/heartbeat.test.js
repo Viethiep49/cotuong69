@@ -45,6 +45,16 @@ describe('Nghiệm thu Task COT-593: [2.4] [BE] Xây dựng cơ chế Heartbeat 
     roomHub = new RoomHub({
       roomManager,
       tokenService: fakeTokenService,
+      // REV-05: WS giờ kiểm tra phiên trong DB -> dùng repo giả luôn ACTIVE
+      userRepository: {
+        findById: async (id) => ({
+          id,
+          status: 'ACTIVE',
+          passwordChangedAt: null,
+          username: 'heartbeat_user',
+          displayName: 'Heartbeat',
+        }),
+      },
       heartbeatIntervalMs: 50, // Chu kỳ ping nhanh trong kiểm thử
       heartbeatTimeoutMs: 150, // Timeout nhanh trong kiểm thử
       reconnectCountdownSeconds: 60,

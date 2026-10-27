@@ -42,6 +42,10 @@ describe('Nghiệm thu Task COT-594: [2.4] [BE] Xử lý Auto-reconnect và khô
     roomHub = new RoomHub({
       roomManager,
       tokenService: fakeTokenService,
+      // REV-05: WS kiểm tra phiên trong DB -> repo giả luôn ACTIVE
+      userRepository: {
+        findById: async (id) => ({ id, status: 'ACTIVE', passwordChangedAt: null, username: 'rc_user', displayName: 'RC' }),
+      },
       heartbeatIntervalMs: 50,
       heartbeatTimeoutMs: 150,
       reconnectCountdownSeconds: 60,
