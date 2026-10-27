@@ -240,8 +240,13 @@ describe('Chốt kết quả đúng một lần (COT-636)', () => {
   it('Kết quả hoặc lý do kết thúc không hợp lệ bị từ chối', async () => {
     const { useCases } = setup();
     const match = await useCases.createPveMatch({ userId: USER_ID, playerColor: 'red' });
+    // BE-20: DRAW giờ là kết quả hợp lệ; dùng giá trị thật sự sai để kiểm tra validate
     await rejectsWith(
-      useCases.finishPveMatch(match.id, { result: 'DRAW', endReason: 'RESIGN' }),
+      useCases.finishPveMatch(match.id, { result: 'TIE', endReason: 'RESIGN' }),
+      ERROR_CODES.INVALID_INPUT
+    );
+    await rejectsWith(
+      useCases.finishPveMatch(match.id, { result: 'WIN', endReason: 'KHONG_TON_TAI' }),
       ERROR_CODES.INVALID_INPUT
     );
   });

@@ -467,7 +467,9 @@ class RoomHub {
 
       // BE-04: chiếu bí / hết nước đi -> kết thúc trận đúng cách qua settleMatch
       if (moveResult.endReason || room.status === 'FINISHED' || room.matchState.status === 'completed') {
-        await this.settleMatch(room, moveResult.winnerColor || playerColor, moveResult.endReason || 'CHECKMATE');
+        // BE-20: hoà thì không có bên thắng
+        const winner = moveResult.isDraw ? null : (moveResult.winnerColor || playerColor);
+        await this.settleMatch(room, winner, moveResult.endReason || 'CHECKMATE');
         return;
       }
 

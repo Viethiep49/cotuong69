@@ -1,3 +1,6 @@
+// BE-20: giới hạn số nước đi của một ván -> quá thì xử hoà (tránh ván vô hạn).
+const MAX_PLY = Number(process.env.MAX_PLY_PER_MATCH || 300);
+
 const { createInitialBoard } = require('../rules/board');
 const { createInitialArmy } = require('./cot615Match');
 
@@ -410,6 +413,7 @@ class Room {
       matchId: this.matchId,
       status: 'active',
       currentTurn: 'red',
+      plyCount: 0,
       turnDurationSeconds: initialTurnSeconds,
       turnRemainingSeconds: initialTurnSeconds,
       remainingClocks: { ...initialClocks },
@@ -479,6 +483,9 @@ class Room {
     this.matchState.inCheck = inCheck;
     this.matchState.checkedColor = inCheck ? nextTurn : null;
 
+    // BE-20: đếm số nước đi, quá giới hạn -> hoà
+    this.matchState.plyCount = Number(this.matchState.plyCount || 0) + 1;
+
     // BE-04: phân biệt CHIẾU BÍ và HẾT NƯỚC ĐI (trước đây luôn ghi 'CHECKMATE')
     let endReason = null;
     if (!hasLegalMove(this.matchState.board, nextTurn)) {
@@ -489,13 +496,23 @@ class Room {
       this.matchState.endReason = endReason;
     }
 
+    // BE-20: hoà khi vượt quá số nước đi tối đa
+    if (!endReason && this.matchState.plyCount >= MAX_PLY) {
+      endReason = 'DRAW_PLY_LIMIT';
+      this.matchState.status = 'completed';
+      this.status = 'FINISHED';
+      this.matchState.winner = null;
+      this.matchState.endReason = endReason;
+    }
+
     return {
       accepted: true,
       captured: Boolean(capturedPiece),
       capturedPiece,
       inCheck,
       endReason,
-      winnerColor: endReason ? color : null,
+      winnerColor: endReason && endReason !== 'DRAW_PLY_LIMIT' ? color : null,
+      isDraw: endReason === 'DRAW_PLY_LIMIT',
     };
   }
 

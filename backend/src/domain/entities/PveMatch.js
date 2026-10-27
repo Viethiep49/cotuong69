@@ -8,7 +8,7 @@
  *   board: Array<Array<null|{ type, color }>>,  // bàn cờ hiện tại
  *   sideToMove: 'red'|'black',
  *   status: 'PLAYING'|'FINISHED',
- *   result: null|'WIN'|'LOSS',                   // theo góc nhìn người chơi
+ *   result: null|'WIN'|'LOSS'|'DRAW',           // theo góc nhìn người chơi (BE-20 thêm DRAW)
  *   endReason: null|string,
  *   ply: number,                                 // số nước đã đi
  *   createdAt: Date, updatedAt: Date, finishedAt: Date|null,
@@ -23,6 +23,7 @@ const PVE_MATCH_STATUS = Object.freeze({
 const PVE_RESULT = Object.freeze({
   WIN: 'WIN',
   LOSS: 'LOSS',
+  DRAW: 'DRAW',
 });
 
 const PVE_END_REASON = Object.freeze({
