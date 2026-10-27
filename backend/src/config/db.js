@@ -52,11 +52,32 @@ async function query(text, params = []) {
 /**
  * Lấy một client từ connection pool (dành cho transaction)
  */
+/**
+ * BE-19: SQLite chỉ có 1 kết nối -> dùng mutex để 2 transaction không đè nhau
+ * (trước đây getClient() trả ngay nên BEGIN/COMMIT của 2 luồng bị xen kẽ).
+ */
+let sqliteLockTail = Promise.resolve();
+
+function acquireSqliteLock() {
+  const previous = sqliteLockTail;
+  let releaseLock;
+  sqliteLockTail = new Promise((resolve) => {
+    releaseLock = resolve;
+  });
+  return previous.then(() => releaseLock);
+}
+
 async function getClient() {
   if (dbClient === 'sqlite' || sqliteDb) {
+    const releaseLock = await acquireSqliteLock();
+    let released = false;
     return {
       query: (t, p) => querySqlite(t, p),
-      release: () => {},
+      release: () => {
+        if (released) return;
+        released = true;
+        releaseLock();
+      },
     };
   }
   return await pool.connect();
