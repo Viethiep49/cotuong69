@@ -1,5 +1,6 @@
 const { URL } = require('node:url');
 const { safeDecode } = require('../../../core/safeDecode');
+const { enforce, getClientIp, roomLookupLimiter } = require('../middlewares/rateLimiter');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
 const CreateRoomUseCase = require('../../../application/useCases/room/createRoom');
 const GetRoomByCodeUseCase = require('../../../application/useCases/room/getRoomByCode');
@@ -108,6 +109,17 @@ function createRoomHandler({
     // 3. Kiểm tra thông tin phòng qua mã / deep link (GET /api/rooms/:code) - COT-589
     const roomCodeMatch = pathname.match(/^\/api\/rooms\/([^/]+)$/);
     if (roomCodeMatch) {
+      // BE-13: 30 lần tra mã phòng / phút / IP (chống dò mã phòng riêng tư)
+      const limited = enforce(roomLookupLimiter, `room-lookup:${getClientIp(request)}`);
+      if (limited) {
+        response.setHeader?.('Retry-After', String(limited.retryAfterSeconds));
+        sendJson(response, limited.statusCode, {
+          error: limited.message,
+          code: limited.code,
+          retryAfterSeconds: limited.retryAfterSeconds,
+        });
+        return;
+      }
       const code = safeDecode(roomCodeMatch[1]);
       if (code === null) {
         sendJson(response, 400, { error: 'Mã phòng không hợp lệ.', code: 'INVALID_ROOM_CODE' });

@@ -5,6 +5,7 @@ const ForgotPasswordUseCase = require('../../../application/useCases/forgotPassw
 const ResetPasswordUseCase = require('../../../application/useCases/resetPassword');
 const OAuthLoginUseCase = require('../../../application/useCases/oauthLogin');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
+const { enforce, getClientIp, loginLimiter, registerLimiter } = require('../middlewares/rateLimiter');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
 function sendJson(response, statusCode, body) {
@@ -16,6 +17,22 @@ function sendJson(response, statusCode, body) {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   });
   response.end(JSON.stringify(body));
+}
+
+/**
+ * BE-13: trả 429 nếu vượt giới hạn.
+ * @returns {boolean} true nếu đã trả response và cần dừng
+ */
+function rejectIfRateLimited(request, response, limiter, key) {
+  const limited = enforce(limiter, key);
+  if (!limited) return false;
+  response.setHeader?.('Retry-After', String(limited.retryAfterSeconds));
+  sendJson(response, limited.statusCode, {
+    error: limited.message,
+    code: limited.code,
+    retryAfterSeconds: limited.retryAfterSeconds,
+  });
+  return true;
 }
 
 function parseJsonBody(request) {
@@ -75,6 +92,9 @@ function createAuthHandler({
         return;
       }
 
+      // BE-13: 5 lần đăng ký / giờ / IP
+      if (rejectIfRateLimited(request, response, registerLimiter, `register:${getClientIp(request)}`)) return;
+
       let payload;
       try {
         payload = await parseJsonBody(request);
@@ -110,6 +130,9 @@ function createAuthHandler({
         return;
       }
 
+      // BE-13: 10 lần / 15 phút / IP và / tên đăng nhập
+      if (rejectIfRateLimited(request, response, loginLimiter, `login-ip:${getClientIp(request)}`)) return;
+
       let payload;
       try {
         payload = await parseJsonBody(request);
@@ -117,6 +140,10 @@ function createAuthHandler({
         sendJson(response, 400, { error: err.message });
         return;
       }
+
+      // BE-13: giới hạn theo username để chặn brute force nhắm 1 tài khoản
+      const loginKey = typeof payload.username === 'string' ? payload.username.trim().toLowerCase() : '';
+      if (loginKey && rejectIfRateLimited(request, response, loginLimiter, `login-user:${loginKey}`)) return;
 
       try {
         const result = await loginUseCase.execute(payload);

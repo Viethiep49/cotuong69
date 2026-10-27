@@ -39,6 +39,10 @@ function validateRegisterInput({ username, displayName, email, password } = {}) 
   if (!password || typeof password !== 'string') {
     errors.push('Mật khẩu không được để trống.');
   } else {
+    if (Buffer.byteLength(password, 'utf8') > 72) {
+      errors.push('Mật khẩu không được dài quá 72 byte.');
+    }
+
     if (password.length < 8) {
       errors.push('Mật khẩu phải có tối thiểu 8 ký tự.');
     }

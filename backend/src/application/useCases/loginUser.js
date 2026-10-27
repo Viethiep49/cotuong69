@@ -2,6 +2,27 @@ const { comparePassword } = require('../services/passwordService');
 const { generateAccessToken } = require('../services/tokenService');
 const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
 
+// BE-13: hash giả dùng cho nhánh "user không tồn tại" (sinh 1 lần, lazy)
+let dummyHashPromise = null;
+function getDummyHash() {
+  if (!dummyHashPromise) {
+    const bcrypt = require('bcryptjs');
+    dummyHashPromise = bcrypt.hash('dummy-password-for-timing', Number(process.env.BCRYPT_SALT_ROUNDS || 12));
+  }
+  return dummyHashPromise;
+}
+
+async function compareAgainstDummy(password, hasher) {
+  try {
+    const dummyHash = await getDummyHash();
+    if (hasher && typeof hasher.comparePassword === 'function') {
+      await hasher.comparePassword(password, dummyHash);
+    }
+  } catch {
+    /* không được để lỗi timing ảnh hưởng luồng đăng nhập */
+  }
+}
+
 class LoginUserUseCase {
   constructor({ userRepository = new PgUserRepository(), tokenService = { generateAccessToken }, hasher = { comparePassword } } = {}) {
     this.userRepository = userRepository;
@@ -36,6 +57,9 @@ class LoginUserUseCase {
     const GENERIC_AUTH_ERROR = 'Tên đăng nhập hoặc mật khẩu không chính xác.';
 
     if (!user || !user.passwordHash) {
+      // BE-13: vẫn chạy bcrypt.compare với hash giả để thời gian phản hồi
+      // không tiết lộ username có tồn tại hay không
+      await compareAgainstDummy(password, this.hasher);
       const err = new Error(GENERIC_AUTH_ERROR);
       err.code = 'INVALID_CREDENTIALS';
       throw err;
