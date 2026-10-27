@@ -1,32 +1,16 @@
-const { AppError } = require('../../../core/errors/AppError');
+const { AppError, asAppError, ERROR_CODES } = require('../../../core/errors/AppError');
 
 /**
  * BE-12: chỉ trả message/code của lỗi nghiệp vụ cho client.
  * Lỗi hệ thống (DB, TypeError, ECONNREFUSED...) -> log nội bộ + 500 INTERNAL_ERROR,
  * không lộ chi tiết kỹ thuật ra ngoài.
+ *
+ * REV-03: trước đây whitelist chỉ chấp nhận mã có trong danh sách VÀ status 4xx,
+ * nên lỗi nghiệp vụ hợp lệ bị biến thành 500 (OAUTH_DISABLED 503, NO_TOKEN,
+ * USER_KICKED, FILE_TOO_LARGE...). Nay mọi mã thuộc ERROR_CODES đều được trả
+ * nguyên văn với status 4xx/5xx của nó.
  */
-
-// Các mã lỗi nghiệp vụ được phép trả nguyên văn cho client
-const KNOWN_ERROR_CODES = new Set([
-  // auth
-  'VALIDATION_ERROR', 'INVALID_CREDENTIALS', 'ACCOUNT_INACTIVE', 'UNAUTHORIZED',
-  'USERNAME_EXISTS', 'EMAIL_EXISTS', 'INVALID_TOKEN', 'TOKEN_EXPIRED',
-  'TOKEN_ALREADY_USED', 'TOKEN_REVOKED', 'INVALID_OAUTH_TOKEN', 'OAUTH_DISABLED',
-  'UNSUPPORTED_OAUTH_PROVIDER', 'OAUTH_PROVIDER_ERROR', 'ACCOUNT_EXISTS_LOGIN_REQUIRED',
-  // user
-  'USER_NOT_FOUND', 'INVALID_AVATAR', 'AVATAR_TOO_LARGE', 'INVALID_DISPLAY_NAME',
-  // room
-  'ROOM_NOT_FOUND', 'ROOM_CLOSED', 'ROOM_CODE_EXHAUSTED', 'INVALID_ROOM_CODE',
-  'INVALID_ROOM_NAME', 'INVALID_MAX_SPECTATORS', 'TOO_MANY_ROOMS', 'GAME_IN_PROGRESS',
-  'NO_OPPONENT', 'ROOM_FULL',
-  // friends
-  'NOT_FRIENDS', 'FRIEND_OFFLINE', 'NOT_IN_ROOM', 'INVITATION_NOT_FOUND',
-  'INVITATION_EXPIRED', 'INVITATION_ALREADY_PROCESSED', 'INVALID_ACTION',
-  'INVALID_INVITATION', 'INVALID_INVITATION_ID', 'FRIEND_REQUEST_EXISTS',
-  // game / chung
-  'INVALID_MOVE', 'ILLEGAL_MOVE', 'NOT_YOUR_TURN', 'MATCH_FINISHED',
-  'FORBIDDEN', 'NOT_FOUND', 'CONFLICT',
-]);
+const KNOWN_ERROR_CODES = new Set(Object.keys(ERROR_CODES));
 
 /**
  * @param {Error} err
@@ -35,25 +19,21 @@ const KNOWN_ERROR_CODES = new Set([
  */
 function toErrorResponse(err, { defaultStatus = 400 } = {}) {
   const status = Number(err && err.statusCode);
+  const appError = err instanceof AppError ? err : asAppError(err);
 
-  const isKnownBusinessError = Boolean(
-    err && (
-      err instanceof AppError
-      || (KNOWN_ERROR_CODES.has(err.code) && Number.isInteger(status) && status >= 400 && status < 500)
-    ),
-  );
-
-  if (isKnownBusinessError) {
+  if (appError) {
     const body = {
-      error: err.message,
-      code: err.code || 'BAD_REQUEST',
+      error: appError.message,
+      code: appError.code || 'BAD_REQUEST',
     };
-    if (Array.isArray(err.errors)) body.errors = err.errors;
-    if (err.details !== undefined) body.details = err.details;
-    return {
-      statusCode: Number.isInteger(status) && status >= 400 && status < 500 ? status : defaultStatus,
-      body,
-    };
+    if (Array.isArray(appError.errors)) body.errors = appError.errors;
+    if (appError.details !== undefined) body.details = appError.details;
+
+    let statusCode = Number(appError.statusCode);
+    if (!Number.isInteger(statusCode) || statusCode < 400 || statusCode > 599) {
+      statusCode = Number.isInteger(status) && status >= 400 && status <= 599 ? status : defaultStatus;
+    }
+    return { statusCode, body };
   }
 
   // Lỗi hệ thống: log đầy đủ ở server, trả về thông báo chung
