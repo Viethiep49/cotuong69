@@ -101,6 +101,49 @@ class PgUserRepository {
     );
     return await this.findById(userId);
   }
+
+  /**
+   * BE-03: cộng/trừ Elo theo DELTA (không ghi đè giá trị tuyệt đối) cho 2 người
+   * trong CÙNG một transaction — tránh ghi sai khi trạng thái trong RAM đã cũ.
+   * @param {{userId:number, delta:number}} first
+   * @param {{userId:number, delta:number}} second
+   */
+  async addEloPair(first, second) {
+    const apply = async (query, { userId, delta }) => {
+      const numericDelta = Number.isFinite(Number(delta)) ? Math.round(Number(delta)) : 0;
+      await query(
+        `UPDATE users
+         SET elo_rating = CASE WHEN elo_rating + $1 < 0 THEN 0 ELSE elo_rating + $1 END
+         WHERE id = $2`,
+        [numericDelta, Number(userId)]
+      );
+    };
+
+    const client = typeof this.db.getClient === 'function' ? await this.db.getClient() : null;
+    if (!client) {
+      const query = (text, params) => this.db.query(text, params);
+      await apply(query, first);
+      await apply(query, second);
+      return;
+    }
+
+    try {
+      await client.query('BEGIN');
+      const query = (text, params) => client.query(text, params);
+      await apply(query, first);
+      await apply(query, second);
+      await client.query('COMMIT');
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 module.exports = PgUserRepository;

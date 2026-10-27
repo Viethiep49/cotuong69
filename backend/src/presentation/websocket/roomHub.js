@@ -933,6 +933,54 @@ class RoomHub {
     }
   }
 
+  /**
+   * BE-03: tính Elo từ rating thật trong DB và chỉ cộng/trừ DELTA cho cả 2 người
+   * trong 1 transaction. Không có DB thì fallback tính theo dữ liệu trong RAM.
+   * @returns {Promise<{winner: object, loser: object}>}
+   */
+  async applyEloForResult(winnerUser, loserUser) {
+    const { calculateElo } = require('../../domain/services/eloCalculator');
+
+    if (!winnerUser || !loserUser) {
+      return {
+        winner: { change: 0, newRating: 1000 },
+        loser: { change: 0, newRating: 1000 },
+      };
+    }
+
+    const repo = this.userRepository;
+
+    let winnerRating = Number(winnerUser.eloRating);
+    let loserRating = Number(loserUser.eloRating);
+
+    if (repo && typeof repo.findById === 'function') {
+      const [winnerInDb, loserInDb] = await Promise.all([
+        repo.findById(winnerUser.id),
+        repo.findById(loserUser.id),
+      ]);
+      if (winnerInDb && Number.isFinite(Number(winnerInDb.eloRating))) winnerRating = Number(winnerInDb.eloRating);
+      if (loserInDb && Number.isFinite(Number(loserInDb.eloRating))) loserRating = Number(loserInDb.eloRating);
+    }
+
+    if (!Number.isFinite(winnerRating)) winnerRating = 1000;
+    if (!Number.isFinite(loserRating)) loserRating = 1000;
+
+    const winner = calculateElo(winnerRating, loserRating, 1, 32);
+    const loser = calculateElo(loserRating, winnerRating, 0, 32);
+
+    if (repo && typeof repo.addEloPair === 'function') {
+      await repo.addEloPair(
+        { userId: winnerUser.id, delta: winner.change },
+        { userId: loserUser.id, delta: loser.change },
+      );
+    } else if (repo && typeof repo.updateElo === 'function') {
+      await repo.updateElo(winnerUser.id, winner.newRating);
+      await repo.updateElo(loserUser.id, loser.newRating);
+    }
+
+    return { winner, loser };
+  }
+
   async handleDisconnectTimeout(room, userId, side) {
     if (!room) return;
 
@@ -990,28 +1038,20 @@ class RoomHub {
     room.reconnectState = null;
     this.clearDisconnectTimer(room.code);
 
-    // Tính điểm Elo theo công thức K=32 cho trận PvP
+    // BE-03: đọc Elo THẬT từ DB và cộng DELTA (trước đây ghi đè tuyệt đối từ giá trị
+    // 1000 mặc định trong RAM -> người 1650 Elo thua bị tụt còn ~984)
     let winnerEloResult = { change: 0, newRating: winningUser?.eloRating ?? 1000 };
     let loserEloResult = { change: 0, newRating: losingUser?.eloRating ?? 1000 };
 
     if (winningUser && losingUser) {
-      const { calculateElo } = require('../../domain/services/eloCalculator');
-      const wRating = Number(winningUser.eloRating ?? 1000);
-      const lRating = Number(losingUser.eloRating ?? 1000);
-
-      winnerEloResult = calculateElo(wRating, lRating, 1, 32);
-      loserEloResult = calculateElo(lRating, wRating, 0, 32);
-
-      winningUser.eloRating = winnerEloResult.newRating;
-      losingUser.eloRating = loserEloResult.newRating;
-
-      if (this.userRepository && typeof this.userRepository.updateElo === 'function') {
-        try {
-          await this.userRepository.updateElo(winningUser.id, winnerEloResult.newRating);
-          await this.userRepository.updateElo(losingUser.id, loserEloResult.newRating);
-        } catch (err) {
-          console.error('Lỗi khi cập nhật Elo vào database:', err);
-        }
+      try {
+        const elo = await this.applyEloForResult(winningUser, losingUser);
+        winnerEloResult = elo.winner;
+        loserEloResult = elo.loser;
+        winningUser.eloRating = winnerEloResult.newRating;
+        losingUser.eloRating = loserEloResult.newRating;
+      } catch (err) {
+        console.error('Lỗi khi cập nhật Elo vào database:', err);
       }
     }
 
