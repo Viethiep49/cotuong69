@@ -53,7 +53,17 @@ class RoomHub {
     this.userRepository = userRepository;
     // BE-09: chia sẻ singleton với friends routes để trạng thái online có tác dụng
     this.onlineUserManager = onlineUserManager;
+    // REV-06: mặc định phải ghi kết quả vào bảng pvp_matches (trước đây null nên
+    // production không bao giờ lưu; chỉ test truyền repo mới có dữ liệu)
     this.pvpMatchRepository = pvpMatchRepository;
+    if (!this.pvpMatchRepository) {
+      try {
+        const PgPvpMatchRepository = require('../../infrastructure/database/repositories/PgPvpMatchRepository');
+        this.pvpMatchRepository = new PgPvpMatchRepository();
+      } catch {
+        this.pvpMatchRepository = null;
+      }
+    }
     if (!this.userRepository) {
       try {
         const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
