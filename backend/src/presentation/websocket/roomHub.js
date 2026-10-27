@@ -91,17 +91,34 @@ class RoomHub {
     }
   }
 
+  /**
+   * REV-01: người này có phải người chơi đang vắng mặt và vừa kết nối lại không?
+   * Phải dựa vào reconnectState.bySide (theo TỪNG bên) — field phẳng
+   * reconnectState.disconnectedUserId bị người rớt SAU CÙNG ghi đè, nên dùng nó
+   * sẽ khiến người vào lại đầu tiên không được nhận diện (hồi quy BE-06).
+   * @param {object} room
+   * @param {number|string} userId
+   * @returns {boolean}
+   */
+  isReconnectingPlayer(room, userId) {
+    if (!room || room.status !== 'PLAYING' || !room.reconnectState) return false;
+    const bySide = room.reconnectState.bySide;
+    if (!bySide) {
+      // Đường cũ (không có bySide): giữ hành vi trước đây
+      return Number(room.reconnectState.disconnectedUserId) === Number(userId);
+    }
+    return ['red', 'black'].some(
+      (side) => bySide[side] && Number(bySide[side].disconnectedUserId) === Number(userId),
+    );
+  }
+
   setupWss() {
     this.wss.on('connection', (socket, request, user, room) => {
       const connectionId = `conn_${crypto.randomUUID()}`;
       const userId = Number(user.id);
 
       // Nếu phòng đang diễn ra ván đấu và người kết nối lại là người chơi đang bị mất kết nối (COT-594)
-      const isReconnectingPlayer = Boolean(
-        room.status === 'PLAYING' &&
-        room.reconnectState &&
-        Number(room.reconnectState.disconnectedUserId) === userId
-      );
+      const isReconnectingPlayer = this.isReconnectingPlayer(room, userId);
 
       if (isReconnectingPlayer) {
         // BE-06: chỉ huỷ bộ đếm của CHÍNH bên này, không đụng bên kia
@@ -1324,6 +1341,27 @@ class RoomHub {
 
     // Đảm bảo chỉ chốt kết quả đúng một lần
     if (room.status !== 'PLAYING' && !room.reconnectState) return;
+
+    // REV-01: bên này có thể đã vào lại trong lúc bộ đếm vừa chạm 0 -> bỏ qua.
+    // Trước đây dùng field phẳng nên xử thắng nhầm người đang vắng và đuổi người đang online.
+    const timeoutSide = String(side || '').toLowerCase();
+    const sideState = room.reconnectState && room.reconnectState.bySide
+      ? room.reconnectState.bySide[timeoutSide]
+      : null;
+    if (sideState && Number(sideState.disconnectedUserId) !== Number(userId)) {
+      return; // bộ đếm này không còn thuộc về người đó
+    }
+    if (!sideState && room.reconnectState && room.reconnectState.bySide) {
+      // Bên này đã kết nối lại (bySide[side] = null) -> không xử thua
+      return;
+    }
+
+    // REV-01: nếu người chơi vừa được đánh dấu timeout mà vẫn còn socket sống trong phòng -> bỏ qua
+    const stillConnected = Array.from(this.userSockets.get(Number(userId)) || []).some((sock) => {
+      const meta = this.clients.get(sock);
+      return meta && meta.roomCode === room.code;
+    });
+    if (stillConnected) return;
 
     const redSockets = room.players.red ? (this.userSockets.get(room.players.red.id) || new Set()) : new Set();
     const blackSockets = room.players.black ? (this.userSockets.get(room.players.black.id) || new Set()) : new Set();

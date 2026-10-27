@@ -565,7 +565,7 @@ Ký hiệu: `[x]` đạt · `[~]` đã làm nhưng còn thiếu, phần thiếu 
 - [x] BE-14 (phần backend đã làm nhưng chưa commit; còn thiếu test và sửa `LobbyNavigation.jsx`)
 
 **Phase 4 — làm tiếp theo, đúng thứ tự:**
-- [ ] REV-01 · [ ] REV-02 · [ ] REV-03 · [ ] REV-04 · [ ] REV-05 · [ ] REV-06 · [ ] REV-07 · [ ] REV-08 · [ ] REV-09 · [ ] REV-10
+- [x] REV-01 · [ ] REV-02 · [ ] REV-03 · [ ] REV-04 · [ ] REV-05 · [ ] REV-06 · [ ] REV-07 · [ ] REV-08 · [ ] REV-09 · [ ] REV-10
 - [ ] REV-11 · [ ] REV-12 · [ ] REV-13 · [ ] REV-14 · [ ] REV-15 · [ ] REV-16 · [ ] REV-17 · [ ] REV-18 · [ ] REV-19
 
 **Còn lại của plan gốc (làm sau Phase 4):**
