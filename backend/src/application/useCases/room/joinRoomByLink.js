@@ -33,6 +33,8 @@ class JoinRoomByLinkUseCase {
       throw err;
     }
 
+    // BE-10: ghế được giữ ngay nhưng RoomManager sẽ tự giải phóng sau 30s
+    // nếu người dùng không thực sự kết nối vào bàn cờ
     const result = this.roomManager.joinRoom(code.trim(), user);
 
     return {
@@ -40,9 +42,11 @@ class JoinRoomByLinkUseCase {
       role: result.role, // 'PLAYER' | 'SPECTATOR'
       side: result.side, // 'RED' | 'BLACK' | null
       isNew: result.isNew,
+      seatReserved: result.role === 'PLAYER',
       room: result.room,
       inviteLink: `${baseUrl}/room/${code.trim().toUpperCase()}`,
       canMove: result.role === 'PLAYER',
+      message: 'Ghế sẽ được giải phóng sau 30 giây nếu bạn không kết nối vào bàn cờ.',
     };
   }
 }

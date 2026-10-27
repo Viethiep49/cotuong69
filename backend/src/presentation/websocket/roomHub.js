@@ -3,6 +3,7 @@ const { URL } = require('node:url');
 const { WebSocketServer } = require('ws');
 const { verifyAccessToken } = require('../../application/services/tokenService');
 const { safeDecode } = require('../../core/safeDecode');
+const { onlineUserManager: defaultOnlineUserManager } = require('../../infrastructure/database/repositories/OnlineUserManager');
 const { roomManager: defaultRoomManager } = require('../../infrastructure/database/repositories/RoomManager');
 
 /**
@@ -41,11 +42,14 @@ class RoomHub {
     heartbeatIntervalMs = 5000,
     heartbeatTimeoutMs = 10000,
     reconnectCountdownSeconds = 60,
+    onlineUserManager = defaultOnlineUserManager,
     enableHeartbeat = true,
   } = {}) {
     this.roomManager = roomManager;
     this.tokenService = tokenService;
     this.userRepository = userRepository;
+    // BE-09: chia sẻ singleton với friends routes để trạng thái online có tác dụng
+    this.onlineUserManager = onlineUserManager;
     if (!this.userRepository) {
       try {
         const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
@@ -196,6 +200,16 @@ class RoomHub {
           side: roleInfo.side,
           room: room.getSummary(),
         });
+      }
+
+      // BE-10: đã có socket thật -> huỷ hẹn giải phóng ghế
+      if (this.roomManager && typeof this.roomManager.confirmSeat === 'function') {
+        this.roomManager.confirmSeat(room.code, userId);
+      }
+
+      // BE-09: đánh dấu user đang IN_GAME để mời bạn bè hoạt động đúng
+      if (this.onlineUserManager) {
+        this.onlineUserManager.setOnline(userId, 'IN_GAME');
       }
 
       // Lắng nghe sự kiện từ client
@@ -876,6 +890,11 @@ class RoomHub {
       if (set.size === 0) this.userSockets.delete(meta.userId);
     }
     this.connectionUsers.delete(meta.connectionId);
+
+    // BE-09: chỉ offline khi user không còn socket nào khác
+    if (this.onlineUserManager && !this.userSockets.has(meta.userId)) {
+      this.onlineUserManager.setOffline(meta.userId);
+    }
 
     // Xóa khỏi room group
     if (this.roomGroups.has(meta.roomCode)) {
