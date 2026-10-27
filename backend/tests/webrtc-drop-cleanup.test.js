@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-626:
  * [4.2] [BE] Xử lý sự kiện Drop kết nối và ngắt cuộc gọi Video Call chủ động.

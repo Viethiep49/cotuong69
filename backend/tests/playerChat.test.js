@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-625:
  * [4.1] [BE] WebSocket trung chuyển tin nhắn Text Chat phòng riêng giữa hai người chơi.

@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-624:
  * [4.2] [BE] Xây dựng Signaling Server cho WebRTC chuyển tiếp SDP và ICE Candidates.

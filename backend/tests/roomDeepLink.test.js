@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-589:
  * Tạo liên kết mời tham gia phòng (Deep link) & phân vai trò (Player / Spectator tối đa 10)

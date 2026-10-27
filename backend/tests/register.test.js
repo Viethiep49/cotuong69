@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-571:
  * Đăng ký tài khoản và mã hóa mật khẩu (Bcrypt)

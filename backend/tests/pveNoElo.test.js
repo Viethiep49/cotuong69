@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * COT-636: Trận PvE KHÔNG cập nhật Elo.
  * Chạy toàn bộ luồng PvE trên PgPveMatchRepository + SQLite in-memory (giống db.test.js) và khẳng định

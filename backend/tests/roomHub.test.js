@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-592:
  * [2.3] [BE] Cấu hình WebSocket/SignalR Hub và Phân chia vai trò, quản lý State phòng.

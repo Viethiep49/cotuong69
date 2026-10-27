@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-572:
  * Đăng nhập hệ thống và tạo JWT Token truy cập
@@ -83,6 +84,8 @@ describe('Nghiệm thu Task COT-572: Đăng nhập hệ thống và tạo JWT To
       const decoded = verifyAccessToken(res.token);
       assert.equal(decoded.username, 'login_tester');
       assert.ok(decoded.id);
+      // SEC-02: payload JWT không được chứa email
+      assert.equal(decoded.email, undefined, 'JWT payload không được chứa email');
     });
 
     test('Đăng nhập thành công bằng email và mật khẩu đúng', async () => {

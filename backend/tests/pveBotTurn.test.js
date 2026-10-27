@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * COT-635: Lượt đi của máy trong trận PvE - chọn ngẫu nhiên một nước hợp lệ
  */

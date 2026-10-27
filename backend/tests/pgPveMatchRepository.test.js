@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * COT-634: PgPveMatchRepository chạy trên SQLite in-memory (giống db.test.js)
  */

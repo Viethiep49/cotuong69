@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-573:
  * Xác thực người dùng qua dịch vụ bên thứ ba (Google / Facebook OAuth2)
@@ -127,7 +128,9 @@ describe('Nghiệm thu Task COT-573: Xác thực OAuth2 Google & Facebook', () =
       // Giải mã JWT kiểm tra tính hợp lệ
       const decoded = verifyAccessToken(res.token);
       assert.equal(decoded.id, res.user.id);
-      assert.equal(decoded.email, 'kythu_google@gmail.com');
+      // SEC-02: JWT payload không còn chứa email
+      assert.equal(decoded.email, undefined);
+      assert.equal(res.user.email, 'kythu_google@gmail.com');
     });
 
     test('Đăng nhập Google lần hai: Nhận diện người dùng cũ, không tạo tài khoản trùng lặp', async () => {

@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * COT-636: Kết thúc ván PvE (chiếu bí, hết nước, hết giờ, đầu hàng) và lịch sử đấu
  */

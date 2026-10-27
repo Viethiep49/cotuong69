@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-577:
  * Cập nhật thông tin cá nhân và Upload ảnh đại diện (Avatar)

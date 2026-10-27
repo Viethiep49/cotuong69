@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const WebSocket = require('ws');

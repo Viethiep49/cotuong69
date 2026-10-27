@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-576:
  * Đặt lại mật khẩu (Reset Password) dựa trên OTP/Token

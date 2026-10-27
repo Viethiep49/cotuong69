@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 const { test, describe, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');

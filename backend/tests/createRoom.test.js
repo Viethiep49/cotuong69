@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-588:
  * [2.1] [BE] Tạo phòng chơi và sinh mã phòng 6 chữ số ngẫu nhiên.

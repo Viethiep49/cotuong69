@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-575:
  * Quên mật khẩu - gửi mã OTP/Token qua Email và giới hạn tần suất

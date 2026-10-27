@@ -1,3 +1,6 @@
+// SEC-02: nạp .env trước mọi require khác để JWT_SECRET/DB_* có sẵn khi module đọc cấu hình
+require('dotenv').config();
+
 const http = require('node:http');
 const { URL } = require('node:url');
 const { WebSocketServer } = require('ws');
@@ -10,6 +13,7 @@ const { createFriendsHandler } = require('./presentation/http/routes/friends.rou
 const { roomHub: defaultRoomHub } = require('./presentation/websocket/roomHub');
 const fs = require('node:fs');
 const path = require('node:path');
+const { assertJwtSecretConfigured } = require('./application/services/tokenService');
 
 function createServer(options = {}) {
   let match = options.match || null;
@@ -180,6 +184,15 @@ function createServer(options = {}) {
 }
 
 if (require.main === module) {
+  // SEC-02: thiếu hoặc quá ngắn JWT_SECRET → dừng ngay, không chạy với secret không an toàn
+  try {
+    assertJwtSecretConfigured();
+  } catch (err) {
+    console.error(`[FATAL] ${err.message}`);
+    console.error('Sinh secret bằng: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"');
+    process.exit(1);
+  }
+
   const port = Number(process.env.PORT || 5000);
   const server = createServer();
 

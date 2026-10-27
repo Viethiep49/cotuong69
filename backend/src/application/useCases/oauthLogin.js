@@ -97,11 +97,10 @@ class OAuthLoginUseCase {
       throw err;
     }
 
-    // 5. Cấp phát JWT Access Token
+    // 5. Cấp phát JWT Access Token (SEC-02: không đưa email vào payload)
     const jwtToken = this.tokenService.generateAccessToken({
       id: user.id,
       username: user.username,
-      email: user.email,
     });
 
     return {

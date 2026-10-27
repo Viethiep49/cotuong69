@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-590:
  * Lấy danh sách bạn bè Online & gửi lời mời trực tiếp (60s countdown, không giữ chỗ trước)
