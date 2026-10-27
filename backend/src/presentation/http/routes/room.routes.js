@@ -10,6 +10,22 @@ const JoinRoomByLinkUseCase = require('../../../application/useCases/room/joinRo
 const { roomManager: defaultRoomManager } = require('../../../infrastructure/database/repositories/RoomManager');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
+/**
+ * REV-04: chặn dò mã phòng (mọi đường tra cứu: get-by-code, invitation, join).
+ * @returns {boolean} true nếu đã trả 429
+ */
+function rejectIfRoomLookupLimited(request, response) {
+  const limited = enforce(roomLookupLimiter, `room-lookup:${getClientIp(request)}`);
+  if (!limited) return false;
+  response.setHeader?.('Retry-After', String(limited.retryAfterSeconds));
+  sendJson(response, limited.statusCode, {
+    error: limited.message,
+    code: limited.code,
+    retryAfterSeconds: limited.retryAfterSeconds,
+  });
+  return true;
+}
+
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -129,6 +145,9 @@ function createRoomHandler({
         return;
       }
 
+      // REV-04: trước đây /invitation không bị giới hạn -> dò mã phòng vô hạn
+      if (rejectIfRoomLookupLimited(request, response)) return;
+
       try {
         const result = getRoomByCodeUseCase.execute(code);
         sendJson(response, 200, result);
@@ -150,6 +169,9 @@ function createRoomHandler({
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận GET.' });
         return;
       }
+
+      // REV-04: trước đây /invitation không bị giới hạn -> dò mã phòng vô hạn
+      if (rejectIfRoomLookupLimited(request, response)) return;
 
       try {
         const result = getRoomByCodeUseCase.execute(code);
@@ -179,6 +201,9 @@ function createRoomHandler({
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận POST.' });
         return;
       }
+
+      // REV-04: /join cũng phải bị giới hạn như get-by-code
+      if (rejectIfRoomLookupLimited(request, response)) return;
 
       let user;
       try {

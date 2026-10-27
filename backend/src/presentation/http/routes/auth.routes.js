@@ -7,7 +7,14 @@ const ForgotPasswordUseCase = require('../../../application/useCases/forgotPassw
 const ResetPasswordUseCase = require('../../../application/useCases/resetPassword');
 const OAuthLoginUseCase = require('../../../application/useCases/oauthLogin');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
-const { enforce, getClientIp, loginLimiter, registerLimiter } = require('../middlewares/rateLimiter');
+const {
+  enforce,
+  getClientIp,
+  loginLimiter,
+  registerLimiter,
+  loginUsernameLimiter,
+  loginSlowdownMs,
+} = require('../middlewares/rateLimiter');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
 function sendJson(response, statusCode, body) {
@@ -129,8 +136,20 @@ function createAuthHandler({
         return;
       }
 
-      // BE-13: 10 lần / 15 phút / IP và / tên đăng nhập
-      if (rejectIfRateLimited(request, response, loginLimiter, `login-ip:${getClientIp(request)}`)) return;
+      // BE-13 + REV-04: IP chỉ bị đếm khi đăng nhập THẤT BẠI (trước đây đếm mọi
+      // request, kể cả đăng nhập đúng). Username chỉ bị làm chậm, không khoá hẳn
+      // -> kẻ xấu không thể khoá tài khoản người khác.
+      const loginIpKey = `login-ip:${getClientIp(request)}`;
+      if (loginLimiter.isBlocked(loginIpKey)) {
+        const retryAfterSeconds = 60;
+        response.setHeader?.('Retry-After', String(retryAfterSeconds));
+        sendJson(response, 429, {
+          error: 'Bạn đã thử quá nhiều lần. Vui lòng thử lại sau ít phút.',
+          code: 'RATE_LIMITED',
+          retryAfterSeconds,
+        });
+        return;
+      }
 
       let payload;
       try {
@@ -140,14 +159,24 @@ function createAuthHandler({
         return;
       }
 
-      // BE-13: giới hạn theo username để chặn brute force nhắm 1 tài khoản
       const loginKey = typeof payload.username === 'string' ? payload.username.trim().toLowerCase() : '';
-      if (loginKey && rejectIfRateLimited(request, response, loginLimiter, `login-user:${loginKey}`)) return;
+      const slowDownMs = loginKey ? loginSlowdownMs(loginKey) : 0;
+      if (slowDownMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, slowDownMs));
+      }
 
       try {
         const result = await loginUseCase.execute(payload);
+        // Đăng nhập thành công -> xoá bộ đếm thất bại của IP và username
+        loginLimiter.reset(loginIpKey);
+        if (loginKey) loginUsernameLimiter.reset(`login-user:${loginKey}`);
         sendJson(response, 200, result);
       } catch (err) {
+        // Chỉ đếm các lần thất bại thực sự (sai thông tin / tài khoản bị khoá)
+        if (err.code === 'INVALID_CREDENTIALS' || err.code === 'ACCOUNT_INACTIVE') {
+          loginLimiter.record(loginIpKey);
+          if (loginKey) loginUsernameLimiter.record(`login-user:${loginKey}`);
+        }
         if (err.code === 'VALIDATION_ERROR') {
           sendJson(response, 400, { error: err.message });
         } else if (err.code === 'INVALID_CREDENTIALS') {

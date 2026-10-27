@@ -7,11 +7,53 @@ class SlidingWindowLimiter {
   /**
    * @param {{limit:number, windowMs:number, name?:string}} options
    */
-  constructor({ limit, windowMs, name = 'limiter' }) {
+  constructor({ limit, windowMs, name = 'limiter', maxKeys = 10000 }) {
     this.limit = Number(limit);
     this.windowMs = Number(windowMs);
     this.name = name;
+    // REV-04: chặn Map phình to do key do kẻ tấn công tự chọn
+    this.maxKeys = Number(maxKeys) > 0 ? Number(maxKeys) : 10000;
     this.hits = new Map(); // key -> number[] (timestamps)
+  }
+
+  /** REV-04: đã vượt giới hạn chưa (KHÔNG ghi nhận thêm lượt) */
+  isBlocked(key, now = Date.now()) {
+    if (!key) return false;
+    const recent = (this.hits.get(key) || []).filter((ts) => now - ts < this.windowMs);
+    if (recent.length === 0) {
+      this.hits.delete(key);
+      return false;
+    }
+    this.hits.set(key, recent);
+    return recent.length >= this.limit;
+  }
+
+  /**
+   * REV-04: ghi nhận một lượt (dùng cho luồng "chỉ đếm lần thất bại").
+   * @returns {{allowed:boolean, count:number}}
+   */
+  record(key, now = Date.now()) {
+    if (!key) return { allowed: true, count: 0 };
+    const recent = (this.hits.get(key) || []).filter((ts) => now - ts < this.windowMs);
+    recent.push(now);
+    if (!this.hits.has(key)) this.evictIfFull();
+    this.hits.set(key, recent);
+    return { allowed: recent.length < this.limit, count: recent.length };
+  }
+
+  /** Số lượt còn trong cửa sổ của key */
+  countOf(key, now = Date.now()) {
+    if (!key) return 0;
+    return (this.hits.get(key) || []).filter((ts) => now - ts < this.windowMs).length;
+  }
+
+  /** Xoá key cũ nhất khi Map đã đầy (Map giữ thứ tự chèn) */
+  evictIfFull() {
+    while (this.hits.size >= this.maxKeys) {
+      const oldest = this.hits.keys().next();
+      if (oldest.done) return;
+      this.hits.delete(oldest.value);
+    }
   }
 
   /**
@@ -32,6 +74,7 @@ class SlidingWindowLimiter {
     }
 
     recent.push(now);
+    if (!this.hits.has(key)) this.evictIfFull();
     this.hits.set(key, recent);
     return { allowed: true, remaining: Math.max(0, this.limit - recent.length), retryAfterMs: 0 };
   }
@@ -51,15 +94,43 @@ class SlidingWindowLimiter {
   }
 }
 
+/** Chỉ nhận ký tự hợp lệ của IPv4/IPv6 (chặn key rác do attacker tự đặt) */
+const IP_PATTERN = /^[0-9a-fA-F:.]{3,45}$/;
+
 /**
- * Lấy IP client (chấp nhận x-forwarded-for khi chạy sau proxy).
+ * Chuẩn hoá IP: bỏ tiền tố ::ffff:, cắt zone id.
+ * @param {string} value
+ * @returns {string|null}
+ */
+function normalizeIp(value) {
+  if (typeof value !== 'string') return null;
+  let ip = value.trim();
+  if (!ip) return null;
+  if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+  const zoneIndex = ip.indexOf('%');
+  if (zoneIndex !== -1) ip = ip.slice(0, zoneIndex);
+  return IP_PATTERN.test(ip) ? ip.toLowerCase() : null;
+}
+
+/**
+ * REV-04: chỉ đọc x-forwarded-for khi TRUST_PROXY=true (chạy sau reverse proxy
+ * tin cậy). Trước đây luôn tin header này nên đổi XFF mỗi request là không bao
+ * giờ bị giới hạn, đồng thời làm Map key phình to.
+ * @param {object} request
+ * @returns {string}
  */
 function getClientIp(request) {
-  const forwarded = request.headers['x-forwarded-for'] || request.headers['X-Forwarded-For'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0].trim();
+  const trustProxy = String(process.env.TRUST_PROXY || '').toLowerCase() === 'true';
+  if (trustProxy) {
+    const forwarded = request.headers && (request.headers['x-forwarded-for'] || request.headers['X-Forwarded-For']);
+    const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    if (typeof raw === 'string' && raw.trim()) {
+      const first = normalizeIp(raw.split(',')[0]);
+      if (first) return first;
+    }
   }
-  const remote = request.socket && request.socket.remoteAddress;
+  const socket = request.socket || request.connection;
+  const remote = normalizeIp(socket && socket.remoteAddress);
   return remote || 'unknown';
 }
 
@@ -68,7 +139,24 @@ const loginLimiter = new SlidingWindowLimiter({ limit: 10, windowMs: 15 * 60 * 1
 const registerLimiter = new SlidingWindowLimiter({ limit: 5, windowMs: 60 * 60 * 1000, name: 'register' });
 const roomLookupLimiter = new SlidingWindowLimiter({ limit: 30, windowMs: 60 * 1000, name: 'room-lookup' });
 
-const allLimiters = [loginLimiter, registerLimiter, roomLookupLimiter];
+// REV-04: đếm theo username nhưng CHỈ dùng để làm chậm, không khoá hẳn
+// (nếu khoá thì kẻ xấu có thể khoá tài khoản người khác bằng cách spam sai mật khẩu)
+const loginUsernameLimiter = new SlidingWindowLimiter({
+  limit: 10, windowMs: 15 * 60 * 1000, name: 'login-username',
+});
+
+const allLimiters = [loginLimiter, registerLimiter, roomLookupLimiter, loginUsernameLimiter];
+
+/**
+ * REV-04: độ trễ tăng dần theo số lần đăng nhập thất bại của username (tối đa 2s).
+ * @param {string} username
+ * @returns {number} ms
+ */
+function loginSlowdownMs(username) {
+  const failures = loginUsernameLimiter.countOf(`login-user:${username}`);
+  if (failures <= 0) return 0;
+  return Math.min(2000, failures * 200);
+}
 
 /**
  * Kiểm tra giới hạn; trả về object mô tả lỗi 429 hoặc null nếu hợp lệ.
@@ -99,6 +187,9 @@ if (cleanupTimer.unref) cleanupTimer.unref();
 module.exports = {
   SlidingWindowLimiter,
   getClientIp,
+  normalizeIp,
+  loginSlowdownMs,
+  loginUsernameLimiter,
   enforce,
   resetAll,
   loginLimiter,

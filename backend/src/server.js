@@ -11,6 +11,7 @@ const { createUserHandler } = require('./presentation/http/routes/user.routes');
 const { createRoomHandler } = require('./presentation/http/routes/room.routes');
 const { createFriendsHandler } = require('./presentation/http/routes/friends.routes');
 const { roomHub: defaultRoomHub } = require('./presentation/websocket/roomHub');
+const { getClientIp, roomLookupLimiter } = require('./presentation/http/middlewares/rateLimiter');
 const fs = require('node:fs');
 const path = require('node:path');
 const { assertJwtSecretConfigured } = require('./application/services/tokenService');
@@ -203,6 +204,21 @@ function createServer(options = {}) {
     }
 
     if (pathname === '/ws/room' || pathname.startsWith('/ws/room/')) {
+      // REV-04: chặn dò mã phòng qua WS upgrade (trước đây dò vô hạn, phân biệt
+      // được mã tồn tại/không tồn tại qua 101 vs 404)
+      // Chỉ CHẶN khi IP đã vượt hạn mức (không consume ở đây): lượt dò mã phòng
+      // chỉ bị đếm khi mã KHÔNG tồn tại (404) trong roomHub.handleUpgrade.
+      const lookupKey = `room-lookup:${getClientIp(request)}`;
+      if (roomLookupLimiter.isBlocked(lookupKey)) {
+        try {
+          socket.write('HTTP/1.1 429 Too Many Requests\r\nRetry-After: 60\r\nConnection: close\r\n\r\n');
+        } catch {
+          /* ignore */
+        }
+        socket.destroy();
+        return;
+      }
+
       roomHub.handleUpgrade(request, socket, head);
       return;
     }

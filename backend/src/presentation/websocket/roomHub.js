@@ -1,3 +1,4 @@
+const { getClientIp, roomLookupLimiter } = require('../http/middlewares/rateLimiter');
 const crypto = require('node:crypto');
 const { URL } = require('node:url');
 const { WebSocketServer } = require('ws');
@@ -309,6 +310,8 @@ class RoomHub {
 
     const room = this.roomManager.findByCode(roomCode);
     if (!room) {
+      // REV-04: mã không tồn tại -> đếm vào hạn mức tra mã phòng của IP này
+      roomLookupLimiter.record(`room-lookup:${getClientIp(request)}`);
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
       socket.destroy();
       return;
