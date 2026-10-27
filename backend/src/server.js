@@ -183,6 +183,11 @@ if (require.main === module) {
   const port = Number(process.env.PORT || 5000);
   const server = createServer();
 
+  // SEC-01: Cảnh báo rõ khi mock OAuth đang bật (chỉ dev/demo)
+  if (process.env.ALLOW_MOCK_OAUTH === 'true' && process.env.NODE_ENV !== 'production') {
+    console.warn('[OAuth] MOCK OAUTH ĐANG BẬT — chỉ dùng cho dev/demo');
+  }
+
   server.listen(port, '127.0.0.1', () => {
     console.log(`Match API listening on http://localhost:${port}`);
     console.log('Development match: GET /api/matches/COT-615; WebSocket /api/matches/COT-615/ws');

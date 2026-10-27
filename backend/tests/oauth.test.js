@@ -8,6 +8,8 @@ const http = require('node:http');
 const { DatabaseSync } = require('node:sqlite');
 
 process.env.DB_CLIENT = 'sqlite';
+// SEC-01: test giữ hành vi mock OAuth cũ (bật rõ ràng), các test gate nằm ở cuối file
+process.env.ALLOW_MOCK_OAUTH = 'true';
 
 const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
@@ -287,6 +289,66 @@ describe('Nghiệm thu Task COT-573: Xác thực OAuth2 Google & Facebook', () =
     test('GET /api/auth/google trả về 405 Method Not Allowed', async () => {
       const res = await makeRequest('GET', '/api/auth/google');
       assert.equal(res.statusCode, 405);
+    });
+  });
+});
+
+/**
+ * SEC-01: Mock OAuth chỉ được tin tưởng khi ALLOW_MOCK_OAUTH=true VÀ NODE_ENV !== 'production'
+ */
+describe('SEC-01: Chặn token mock OAuth khi chưa được bật', () => {
+  const OAuthVerifierService = require('../src/application/services/oauthService');
+
+  function withEnv(env, fn) {
+    const backup = {
+      ALLOW_MOCK_OAUTH: process.env.ALLOW_MOCK_OAUTH,
+      NODE_ENV: process.env.NODE_ENV,
+    };
+    for (const [k, v] of Object.entries(env)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    try {
+      return fn();
+    } finally {
+      for (const [k, v] of Object.entries(backup)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  }
+
+  test('mặc định (không set ALLOW_MOCK_OAUTH) thì token mock_ bị từ chối 401', async () => {
+    await withEnv({ ALLOW_MOCK_OAUTH: undefined, NODE_ENV: 'development' }, async () => {
+      const verifier = new OAuthVerifierService();
+      await assert.rejects(
+        () => verifier.verify('google', 'mock_google:999:victim@mail.com:Ke Gian'),
+        (err) => {
+          assert.equal(err.code, 'INVALID_OAUTH_TOKEN');
+          assert.equal(err.statusCode, 401);
+          return true;
+        },
+      );
+    });
+  });
+
+  test('production: ALLOW_MOCK_OAUTH=true vẫn bị từ chối', async () => {
+    await withEnv({ ALLOW_MOCK_OAUTH: 'true', NODE_ENV: 'production' }, async () => {
+      const verifier = new OAuthVerifierService();
+      await assert.rejects(
+        () => verifier.verify('facebook', 'mock_facebook:1:a@b.com:X'),
+        (err) => err.statusCode === 401,
+      );
+    });
+  });
+
+  test('dev + ALLOW_MOCK_OAUTH=true thì mock_ hoạt động như cũ', async () => {
+    await withEnv({ ALLOW_MOCK_OAUTH: 'true', NODE_ENV: 'development' }, async () => {
+      const verifier = new OAuthVerifierService();
+      const profile = await verifier.verify('google', 'mock_google:12345:dev@mail.com:Dev User');
+      assert.equal(profile.providerId, '12345');
+      assert.equal(profile.email, 'dev@mail.com');
+      assert.equal(profile.name, 'Dev User');
     });
   });
 });
