@@ -66,10 +66,14 @@ class RoomHub {
       );
 
       if (isReconnectingPlayer) {
-        this.clearDisconnectTimer(room.code);
-        room.resumeMatchAfterReconnect(userId);
-        // BE-05: tiếp tục đồng hồ sau khi người chơi vào lại
-        this.armTurnTimer(room);
+        // BE-06: chỉ huỷ bộ đếm của CHÍNH bên này, không đụng bên kia
+        const reconnectRole = room.getParticipantRole(userId);
+        this.clearDisconnectTimer(room.code, reconnectRole && reconnectRole.side);
+        const resumeResult = room.resumeMatchAfterReconnect(userId);
+        // BE-05 + BE-06: chỉ chạy lại đồng hồ khi KHÔNG còn bên nào vắng
+        if (!resumeResult || !resumeResult.stillPaused) {
+          this.armTurnTimer(room);
+        }
       }
 
       // Thêm người chơi vào phòng logic (nếu chưa có trong phòng)
@@ -947,30 +951,55 @@ class RoomHub {
     }
   }
 
+  /**
+   * BE-06: mỗi BÊN có timer riêng (khoá `${roomCode}:${side}`). Trước đây chỉ 1
+   * timer/phòng nên người thứ hai rớt mạng huỷ luôn bộ đếm của người thứ nhất.
+   */
   startDisconnectTimer(room, userId, side) {
-    this.clearDisconnectTimer(room.code);
+    const sideKey = String(side || '').toLowerCase();
+    const timerKey = `${room.code}:${sideKey}`;
+    this.clearDisconnectTimer(room.code, side);
 
     let remaining = this.reconnectCountdownSeconds;
     const interval = setInterval(() => {
       remaining -= 1;
+      const bySide = room.reconnectState && room.reconnectState.bySide;
+      if (bySide && bySide[sideKey]) {
+        bySide[sideKey].countdownSeconds = Math.max(0, remaining);
+      }
       if (room.reconnectState) {
         room.reconnectState.countdownSeconds = Math.max(0, remaining);
       }
       if (remaining <= 0) {
-        this.clearDisconnectTimer(room.code);
+        this.clearDisconnectTimer(room.code, side);
         this.handleDisconnectTimeout(room, userId, side);
       }
     }, 1000);
 
     if (interval.unref) interval.unref();
-    this.disconnectTimers.set(room.code, { interval, userId, side });
+    this.disconnectTimers.set(timerKey, { interval, userId, side });
   }
 
-  clearDisconnectTimer(roomCode) {
-    if (this.disconnectTimers.has(roomCode)) {
-      const item = this.disconnectTimers.get(roomCode);
-      clearInterval(item.interval);
-      this.disconnectTimers.delete(roomCode);
+  /**
+   * @param {string} roomCode
+   * @param {string} [side] chỉ xoá timer của một bên; bỏ trống = xoá tất cả của phòng
+   */
+  clearDisconnectTimer(roomCode, side = null) {
+    if (side) {
+      const timerKey = `${roomCode}:${String(side).toLowerCase()}`;
+      const item = this.disconnectTimers.get(timerKey);
+      if (item) {
+        clearInterval(item.interval);
+        this.disconnectTimers.delete(timerKey);
+      }
+      return;
+    }
+
+    for (const [key, item] of Array.from(this.disconnectTimers.entries())) {
+      if (key === roomCode || key.startsWith(`${roomCode}:`)) {
+        clearInterval(item.interval);
+        this.disconnectTimers.delete(key);
+      }
     }
   }
 
@@ -1324,8 +1353,9 @@ class RoomHub {
       this.turnTimers.clear();
     }
     this.stopHeartbeat();
-    for (const [code] of Array.from(this.disconnectTimers.entries())) {
-      this.clearDisconnectTimer(code);
+    for (const [key, item] of Array.from(this.disconnectTimers.entries())) {
+      clearInterval(item.interval);
+      this.disconnectTimers.delete(key);
     }
     for (const socket of Array.from(this.clients.keys())) {
       try {

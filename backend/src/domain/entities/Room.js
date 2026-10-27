@@ -255,12 +255,35 @@ class Room {
     this.matchState.turnRemainingSeconds = remaining;
     this.matchState.isPaused = true;
 
-    this.reconnectState = {
+    // BE-06: lưu trạng thái mất kết nối THEO TỪNG BÊN (trước đây chỉ 1 state nên
+    // người thứ hai rớt mạng ghi đè người thứ nhất -> không còn timer, ván treo)
+    const sideKey = String(roleInfo.side || '').toLowerCase();
+    if (!this.reconnectState || !this.reconnectState.bySide) {
+      const previous = this.reconnectState;
+      this.reconnectState = { bySide: { red: null, black: null } };
+      if (previous && previous.disconnectedSide) {
+        const previousKey = String(previous.disconnectedSide).toLowerCase();
+        if (previousKey === 'red' || previousKey === 'black') {
+          this.reconnectState.bySide[previousKey] = previous;
+        }
+      }
+    }
+
+    const sideState = {
       disconnectedUserId: uid,
       disconnectedSide: roleInfo.side,
       countdownSeconds: Number(countdownSeconds),
       pausedAt: Date.now(),
     };
+    if (sideKey === 'red' || sideKey === 'black') {
+      this.reconnectState.bySide[sideKey] = sideState;
+    }
+
+    // Giữ các field phẳng để tương thích client/đoạn code cũ
+    this.reconnectState.disconnectedUserId = uid;
+    this.reconnectState.disconnectedSide = roleInfo.side;
+    this.reconnectState.countdownSeconds = Number(countdownSeconds);
+    this.reconnectState.pausedAt = sideState.pausedAt;
 
     return {
       room: this.getSummary(),
@@ -269,22 +292,57 @@ class Room {
     };
   }
 
+  /** BE-06: các bên đang mất kết nối (mảng tên bên: 'red' | 'black') */
+  getDisconnectedSides() {
+    const bySide = this.reconnectState && this.reconnectState.bySide;
+    if (!bySide) return [];
+    return ['red', 'black'].filter((side) => Boolean(bySide[side]));
+  }
+
   resumeMatchAfterReconnect(userId) {
     if (!this.reconnectState) return null;
-    if (Number(this.reconnectState.disconnectedUserId) !== Number(userId)) return null;
+
+    const bySide = this.reconnectState.bySide;
+
+    // Đường cũ (không có bySide): giữ hành vi cũ
+    if (!bySide) {
+      if (Number(this.reconnectState.disconnectedUserId) !== Number(userId)) return null;
+      if (this.matchState) {
+        this.matchState.isPaused = false;
+        this.matchState.turnStartedAt = Date.now();
+      }
+      const legacyState = { ...this.reconnectState };
+      this.reconnectState = null;
+      return { room: this.getSummary(), resumedState: legacyState, stillPaused: false };
+    }
+
+    const sideKey = ['red', 'black'].find(
+      (side) => bySide[side] && Number(bySide[side].disconnectedUserId) === Number(userId),
+    );
+    if (!sideKey) return null;
+
+    const resumedState = { ...bySide[sideKey] };
+    bySide[sideKey] = null;
+
+    const stillDisconnected = ['red', 'black'].some((side) => Boolean(bySide[side]));
+    if (stillDisconnected) {
+      // BE-06: người còn lại vẫn vắng -> giữ nguyên trạng thái tạm dừng, KHÔNG resume
+      this.reconnectState.disconnectedUserId = Number(bySide.red?.disconnectedUserId ?? bySide.black?.disconnectedUserId ?? null);
+      const remainingSide = ['red', 'black'].find((side) => bySide[side]);
+      if (remainingSide) {
+        this.reconnectState.disconnectedSide = bySide[remainingSide].disconnectedSide;
+        this.reconnectState.countdownSeconds = bySide[remainingSide].countdownSeconds;
+      }
+      return { room: this.getSummary(), resumedState, stillPaused: true };
+    }
 
     if (this.matchState) {
       this.matchState.isPaused = false;
       this.matchState.turnStartedAt = Date.now();
     }
-
-    const resumedState = { ...this.reconnectState };
     this.reconnectState = null;
 
-    return {
-      room: this.getSummary(),
-      resumedState,
-    };
+    return { room: this.getSummary(), resumedState, stillPaused: false };
   }
 
   getSnapshot() {

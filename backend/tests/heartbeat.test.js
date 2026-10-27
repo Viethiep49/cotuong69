@@ -215,7 +215,9 @@ describe('Nghiệm thu Task COT-593: [2.4] [BE] Xây dựng cơ chế Heartbeat 
       assert.strictEqual(testRoom.getRemainingTurnSeconds(), frozenSeconds, 'Đồng hồ nước đi không được trừ khi đang tạm dừng chờ reconnect');
 
       // 5. Kiểm tra bộ đếm 60s tại máy chủ
-      assert.ok(roomHub.disconnectTimers.has(testRoom.code), 'Máy chủ phải duy trì disconnect timer cho phòng');
+      // BE-06: timer giờ theo từng bên -> khoá `${roomCode}:${side}`
+      const hasTimer = Array.from(roomHub.disconnectTimers.keys()).some((key) => key.startsWith(`${testRoom.code}:`));
+      assert.ok(hasTimer, 'Máy chủ phải duy trì disconnect timer cho phòng');
       assert.ok(testRoom.reconnectState, 'Room phải ghi nhận reconnectState');
       assert.strictEqual(testRoom.reconnectState.disconnectedUserId, opponentUser.id);
 
