@@ -970,7 +970,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (event.room.isPublic && event.room.status !== 'CLOSED') {
           currentRooms.unshift(event.room);
         }
-        showToast(`Trạng thái phòng [${event.room.code}] đã được cập nhật: ${window.ROOM_STATUS[event.room.status]?.label || event.room.status}`, 'info');
+        showToast(`Trạng thái phòng [${escapeHtml(event.room.code)}] đã được cập nhật: ${escapeHtml(window.ROOM_STATUS[event.room.status]?.label || event.room.status)}`, 'info');
       }
 
       updateBadgeCounts();
@@ -1084,7 +1084,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const btnClass = isFullOrPlaying ? 'btn-secondary' : 'btn-primary';
 
       return `
-        <article class="room-card" data-room-code="${room.code}">
+        <article class="room-card" data-room-code="${escapeHtml(room.code)}">
           <div>
             <div class="room-card-header">
               <span class="room-code-tag">#${escapeHtml(room.code)}</span>
@@ -1319,7 +1319,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Đang có lời mời chờ phản hồi (đếm ngược 60 giây)
         actionHtml = `
           <div class="waiting-invite-box">
-            <span class="waiting-countdown">⏳ <strong id="cd-${friend.id}">${inviteInfo.remainingSec}s</strong></span>
+            <span class="waiting-countdown">⏳ <strong id="cd-${escapeHtml(friend.id)}">${Number(inviteInfo.remainingSec) || 0}s</strong></span>
             <button class="btn-cancel-invite" data-friend-id="${escapeHtml(friend.id)}" data-inv-id="${escapeHtml(inviteInfo.invitationId)}">
               Hủy mời
             </button>
@@ -1544,7 +1544,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (response.success) {
         closeCreateRoomModal();
         await loadRooms();
-        showToast(`Tạo phòng cờ "${response.room.name}" thành công!`, 'success');
+        showToast(`Tạo phòng cờ "${escapeHtml(response.room.name)}" thành công!`, 'success');
 
         // Tiêu chí 4: Điều hướng người tạo vào Room với vai trò Chủ phòng
         openRoomModal(response.room, response.role, response.roleMessage);
@@ -1637,6 +1637,28 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
+   * FE-04: chỉ chấp nhận URL ảnh an toàn (https hoặc /uploads/... hoặc data:image).
+   * Trả chuỗi rỗng nếu không hợp lệ để tránh chèn URL lạ vào thuộc tính src.
+   */
+  function safeAvatarUrl(url) {
+    const raw = typeof url === 'string' ? url.trim() : '';
+    if (!raw) return '';
+    if (raw.startsWith('/uploads/') && !raw.includes('..')) return raw;
+    if (/^https:\/\//i.test(raw)) return raw;
+    if (/^data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i.test(raw)) return raw;
+    return '';
+  }
+
+  /** FE-04: ảnh đại diện an toàn cho innerHTML (rỗng -> hiện ký tự đầu tên) */
+  function avatarMarkup(url, fallbackText) {
+    const safeUrl = safeAvatarUrl(url);
+    if (safeUrl) {
+      return `<img src="${escapeHtml(safeUrl)}" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+    }
+    return escapeHtml(String(fallbackText || '?').slice(0, 1));
+  }
+
+  /**
    * ===================================================================
    * COT-603: Xử lý luồng mở link mời phòng & Đăng nhập chuyển hướng
    * ===================================================================
@@ -1653,8 +1675,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (nameEl) nameEl.textContent = user.displayName || user.username || 'Kỳ Thủ';
       if (eloEl) eloEl.textContent = Number.isFinite(user.elo) ? user.elo : (user.eloRating || 1000);
       if (avatarEl) {
-        if (user.avatarUrl && (user.avatarUrl.startsWith('data:') || user.avatarUrl.startsWith('http') || user.avatarUrl.startsWith('/'))) {
-          avatarEl.innerHTML = `<img src="${escapeHtml(user.avatarUrl)}" alt="Avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+        // FE-04: chỉ render ảnh khi URL thuộc whitelist
+        const safeUrl = safeAvatarUrl(user.avatarUrl);
+        if (safeUrl) {
+          avatarEl.innerHTML = avatarMarkup(safeUrl, user.displayName);
         } else {
           avatarEl.textContent = user.avatar || (user.displayName ? user.displayName.charAt(0).toUpperCase() : '棋');
         }
@@ -2042,10 +2066,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (profileSuccessBanner) profileSuccessBanner.style.display = 'none';
 
-    // Hiển thị Avatar hiện tại
-    if (user.avatarUrl && (user.avatarUrl.startsWith('data:') || user.avatarUrl.startsWith('http') || user.avatarUrl.startsWith('/'))) {
+    // Hiển thị Avatar hiện tại (FE-04: chỉ nhận URL thuộc whitelist)
+    const profileSafeAvatar = safeAvatarUrl(user.avatarUrl);
+    if (profileSafeAvatar) {
       if (profileAvatarImg) {
-        profileAvatarImg.src = user.avatarUrl;
+        profileAvatarImg.src = profileSafeAvatar;
         profileAvatarImg.style.display = 'block';
       }
       if (profileAvatarFallback) profileAvatarFallback.style.display = 'none';
@@ -2519,12 +2544,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return `
           <div class="chat-message-row ${isSelf ? 'message-self' : 'message-opponent'}">
             <div class="chat-bubble-avatar ${isSelf ? 'avatar-self' : 'avatar-opponent'}">
-              ${msg.senderAvatar || (msg.senderName ? msg.senderName.slice(0, 1) : '?')}
+              ${avatarMarkup(msg.senderAvatar, msg.senderName)}
             </div>
             <div class="chat-bubble-content">
               <div class="chat-bubble-meta">
                 <span class="chat-sender-name">${escapeHtml(msg.senderName)}</span>
-                <span class="chat-timestamp">${msg.timestamp}</span>
+                <span class="chat-timestamp">${escapeHtml(msg.timestamp)}</span>
               </div>
               <div class="chat-bubble-bubble">
                 <p class="chat-bubble-text">${escapeHtml(msg.text)}</p>
@@ -2596,15 +2621,6 @@ document.addEventListener('DOMContentLoaded', () => {
         floatingChatError.style.display = 'block';
       }
     }
-  }
-
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
   }
 
   // Khởi chạy
