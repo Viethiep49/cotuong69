@@ -31,6 +31,27 @@ class RoomManager {
     throw err;
   }
 
+  /**
+   * BE-14: mã phòng RIÊNG TƯ dùng 10 ký tự base32 (Crockford, bỏ I/L/O/U)
+   * -> 50 bit entropy, không thể dò như mã 6 số.
+   * @returns {string}
+   */
+  generatePrivateCode() {
+    const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const bytes = crypto.randomBytes(10);
+      let code = '';
+      for (let i = 0; i < 10; i += 1) {
+        code += alphabet[bytes[i] % alphabet.length];
+      }
+      if (!this.rooms.has(code)) return code;
+    }
+    const err = new Error('Không sinh được mã phòng mới, vui lòng thử lại.');
+    err.code = 'ROOM_CODE_EXHAUSTED';
+    err.statusCode = 503;
+    throw err;
+  }
+
   createRoom({ hostUser, name, isPrivate = false, maxSpectators = 10 }) {
     if (!hostUser || !hostUser.id) {
       const err = new Error('Yêu cầu tài khoản hợp lệ để tạo phòng.');
@@ -70,7 +91,8 @@ class RoomManager {
       throw err;
     }
 
-    const code = this.generateCode();
+    // BE-14: phòng riêng tư dùng mã dài, không đoán được
+    const code = isPrivate ? this.generatePrivateCode() : this.generateCode();
     const room = new Room({
       code,
       name: cleanName || `Phòng cờ của ${hostUser.displayName || hostUser.username}`,

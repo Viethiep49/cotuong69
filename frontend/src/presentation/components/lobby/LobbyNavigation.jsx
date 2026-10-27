@@ -1,3 +1,4 @@
+import { sanitizeRoomCodeInput, normalizeRoomCode, roomCodeError } from '../../../domain/roomCode.js';
 import React, { useState } from 'react';
 import GameModeCard from './GameModeCard';
 
@@ -23,13 +24,11 @@ export default function LobbyNavigation({
 
   const handleJoinSubmit = (e) => {
     e.preventDefault();
-    const cleanCode = roomCode.trim();
-    if (!cleanCode) {
-      setCodeError('Vui lòng nhập mã phòng 6 chữ số.');
-      return;
-    }
-    if (!/^\d{6}$/.test(cleanCode)) {
-      setCodeError('Mã phòng phải gồm đúng 6 chữ số (ví dụ: 102938).');
+    const cleanCode = normalizeRoomCode(roomCode);
+    // BE-14: chấp nhận 6 chữ số (phòng công khai) hoặc 10 ký tự base32 (phòng riêng tư)
+    const error = roomCodeError(cleanCode);
+    if (error) {
+      setCodeError(error);
       return;
     }
     setCodeError('');
@@ -95,15 +94,16 @@ export default function LobbyNavigation({
                 type="text"
                 id="lobbyRoomCodeInput"
                 name="roomCode"
-                maxLength={6}
+                maxLength={10}
                 value={roomCode}
                 onChange={(e) => {
-                  setRoomCode(e.target.value.replace(/\D/g, ''));
+                  setRoomCode(sanitizeRoomCodeInput(e.target.value));
                   if (codeError) setCodeError('');
                 }}
-                placeholder="Nhập mã phòng 6 số (vd: 102938)"
+                placeholder="Mã phòng: 6 số (102938) hoặc 10 ký tự (7K3M9QX2AB)"
                 autoComplete="off"
-                inputMode="numeric"
+                autoCapitalize="characters"
+                spellCheck={false}
               />
               <button type="submit" id="lobbyJoinBtn" className="btn btn-primary">
                 <span>Vào Phòng</span>

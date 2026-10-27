@@ -1,6 +1,7 @@
 # KẾ HOẠCH SỬA LỖI SAU CODE REVIEW — Cờ Tướng Online (cotuong69)
 
 > Ngày review: 28/10/2026 · Commit: `b2af112` (nhánh `main`)
+> **Review lần 2 (sau đợt sửa 1)**: commit `fec60ae` — xem **mục 0.4** và **PHASE 4** trước tiên.
 > Tài liệu này dùng làm **đầu vào cho AI code (DeepSeek)**. Đọc hết phần 0 trước khi sửa bất kỳ dòng nào.
 
 ---
@@ -11,7 +12,7 @@
 - **Backend**: Node.js ≥ 20, **không dùng Express** — `http.createServer` thuần + thư viện `ws`, `pg` (PostgreSQL), `jsonwebtoken`, `bcryptjs`, `dotenv`. Entry: `backend/src/server.js`. Test: `cd backend && npm test` (node:test, dùng SQLite in-memory qua `--experimental-sqlite`).
 - **Frontend**: React 18 + Vite 5 (`frontend/src`) **chạy song song** với code JS thuần cũ (`frontend/js/*.js`, được `index.html` và `src/main.jsx` nạp). Lobby/đăng nhập/PvE do JS cũ điều khiển; React chỉ render màn hình trận đấu (`?matchId=`). Test: `cd frontend && npm test`.
 - **CI**: `.github/workflows/ai-pr-test.yml`, `jira-sync.yml` + script Python trong `.github/scripts/`.
-- Hiện trạng test: backend **361/361 pass**, frontend **160/160 pass**, `vite build` thành công. → **Sau mỗi task phải giữ nguyên 100% pass.**
+- Hiện trạng test (tại `fec60ae` + thay đổi BE-14 chưa commit): backend **473/473 pass**, frontend **184/184 pass**, `vite build` thành công. → **Sau mỗi task phải giữ nguyên 100% pass.**
 
 ### 0.1b Phạm vi (đồ án môn học) — các quyết định đã chốt
 - **Đăng nhập chính = đăng ký/đăng nhập thường** (username + tên hiển thị + email + mật khẩu). **Giữ nguyên** trường email bắt buộc như hiện tại, nhưng **không xác minh email** (không gửi mail kích hoạt). Người chơi đăng ký xong là chơi được ngay. Không đổi schema bảng `users` cho phần này.
@@ -24,7 +25,7 @@
 2. Mỗi task (mã `SEC-xx`, `BE-xx`, `FE-xx`, `CI-xx`) = **một commit riêng**, message dạng: `fix(SEC-01): <mô tả ngắn>`.
 3. Mỗi task phải **thêm ít nhất 1 test** chứng minh lỗi đã được sửa (test fail trước khi sửa, pass sau khi sửa), trừ khi task ghi rõ "không cần test".
 4. **Giữ phong cách code hiện có**: CommonJS (`require`) ở backend, comment tiếng Việt, cấu trúc thư mục hiện tại. Không thêm framework mới (Express, Socket.IO, Prisma…) trừ khi task yêu cầu.
-5. Không sửa file ngoài phạm vi task. Không xoá test có sẵn trừ khi task yêu cầu (FE-13).
+5. Không sửa file ngoài phạm vi task. Không xoá test có sẵn trừ khi task yêu cầu (CLEAN-04).
 6. Không đọc/in/commit nội dung `backend/.env`.
 7. Số dòng ghi trong tài liệu là tại commit `b2af112`; nếu đã lệch do task trước, tìm theo đoạn code được mô tả.
 8. Nếu một task cần quyết định nghiệp vụ không có trong tài liệu → dừng lại, ghi `TODO(<mã task>)` và báo lại, **không tự đoán**.
@@ -34,6 +35,39 @@
 cd backend && npm test
 cd frontend && npm test && npx vite build
 ```
+
+### 0.4 Trạng thái sau đợt sửa 1 & thứ tự làm tiếp (review lần 2 — 28/10/2026)
+
+**Báo cáo cuối của DeepSeek ở đợt 1 (trích nguyên văn):**
+
+> Commit BE-14 (mình viết thêm test rồi commit) → 31/41.
+>
+> 1. Bỏ thay đổi dở (`git checkout -- backend/src/.../RoomManager.js`) → quay về đúng 30/41 đã commit.
+> 2. Để nguyên, không làm gì thêm.
+>
+> Ngoài ra nếu muốn tiếp tục plan thì nói rõ, mình sẽ làm 10 task còn lại (FE-01/05/06/07/08/10, BE-14, CLEAN-01→04).
+
+**Trả lời / quyết định:**
+- **Không revert BE-14.** Phần backend trong `RoomManager.js` (đang chưa commit) đã đúng: mã 10 ký tự Crockford base32, `crypto.randomBytes`, không lệch phân phối. Nhưng chưa xong, phải làm thêm 2 việc trước khi commit:
+  - Viết test cho `generatePrivateCode` / tạo phòng riêng tư.
+  - Sửa frontend `frontend/src/presentation/components/lobby/LobbyNavigation.jsx:31, 98, 101`. File này đang ép mã phòng là đúng 6 chữ số (regex `/^\d{6}$/`, `maxLength={6}`, xoá ký tự không phải số), nên không ai gõ được mã riêng tư. Phải cho phép **6 chữ số HOẶC 10 ký tự base32** (không phân biệt hoa/thường, tự chuyển thành chữ hoa).
+  - Xem chi tiết ở BE-14 bên dưới.
+- Số task còn lại là **11**, không phải 10: FE-01, FE-05, FE-06, FE-07, FE-08, FE-10, BE-14, CLEAN-01, CLEAN-02, CLEAN-03, CLEAN-04.
+- **Tiếp tục plan, nhưng theo thứ tự mới:**
+  1. Hoàn thiện **BE-14** như trên và commit **trước tiên**. Đang có thay đổi chưa commit trong working tree; nếu làm task khác trước, thay đổi này dễ bị gộp nhầm vào commit khác. Trước mỗi commit chạy `git status` và chỉ `git add` đúng file của task.
+  2. **PHASE 4 (REV-01 → REV-19)**: sửa các lỗi/thiếu sót phát hiện ở review lần 2. Đây là ưu tiên cao vì có lỗi xử thắng sai và có hồi quy.
+  3. Các task Phase 2 còn lại: FE-06 → FE-08 → FE-07 → FE-01 → FE-05 → FE-10.
+  4. CLEAN-01 → CLEAN-04.
+
+**Kết quả review lần 2, từng task đã tick:**
+
+| Kết quả | Task |
+|---|---|
+| ✅ Đạt | SEC-01, SEC-02, SEC-03 (đã tấn công thử trên server thật, cả 6 vector đều không làm sập), SEC-04, BE-01, BE-03, BE-09/BE-10, BE-11, BE-15, BE-19, FE-02, FE-09, FE-11 |
+| ⚠️ Thiếu một phần (phần còn thiếu nằm trong PHASE 4) | SEC-05, BE-02, BE-04/BE-05, BE-07, BE-08, BE-13, BE-16, BE-17, BE-18, BE-20, FE-03, FE-04, CLEAN-05 |
+| ❌ Sai / gây lỗi mới | BE-06 (→ REV-01), BE-12 (→ REV-03) |
+
+Không phát hiện test nào bị xoá hoặc làm yếu sai quy định.
 
 ---
 
@@ -203,6 +237,12 @@ Không có `process.on('unhandledRejection'|'uncaughtException')`, không có `w
 - **File**: `frontend/src/application/hooks/useWebRtcCall.js:84,113,124,145,208,219`, `useMatch.js:247-248, 346-351`; backend `server.js:100-103`
 - **Lỗi**: message `call:*` gửi lên `/api/matches/:id/ws` (chỉ hiểu `move`) → server trả lỗi "Yêu cầu nước đi không hợp lệ", UI kẹt ở CALLING và hiện lỗi nước đi giả.
 - **Sửa**: gửi signaling qua socket roomHub (`/ws/room/:code`) — nơi đã có xử lý `call:*`. Thêm timeout chuông phía client (60s, khớp UI `VideoCallOverlay.jsx:63`). Ở `useMatch.js:247` chỉ map `error` thành `moveError` khi đang có nước đi chờ phản hồi.
+- **Cập nhật sau review lần 2 — phụ thuộc**:
+  - Lobby JS cũ vẫn là giả lập, nên màn hình trận React hiện chỉ có `matchId` (trận demo `COT-615`), không có mã phòng roomHub. Chủ dự án demo trên **1 máy, 2 trình duyệt** qua `http://localhost:3000/?matchId=COT-615`.
+  - Cách làm:
+    - Nếu URL có `roomCode`: dùng socket roomHub.
+    - Nếu chỉ có `matchId` (demo): thêm relay `call:*` vào **WS trận demo** trong `server.js`. Chỉ relay giữa 2 người cầm Đỏ/Đen, không gửi cho khán giả. Áp dụng cùng giới hạn như BE-07: SDP < 20000 ký tự, khớp `callId`, chỉ relay offer/answer/candidate sau khi cuộc gọi đã được chấp nhận.
+  - Lưu ý khi test trên 1 máy: hai trình duyệt dùng chung một webcam, bên thứ hai có thể không mở được camera. UI phải hiện lỗi rõ ràng và vẫn cho gọi chỉ bằng mic.
 
 ### FE-02 · Build production thiếu `/js/pve.js` và `/js/auth.js`; `auth.js` chạy 2 lần
 - **File**: `frontend/index.html:945, 1127`, `frontend/src/main.jsx:5-8`
@@ -220,6 +260,10 @@ Không có `process.on('unhandledRejection'|'uncaughtException')`, không có `w
 
 ### FE-05 · Chat là giả lập: báo "Đã gửi" nhưng đối thủ không nhận
 - **File**: `frontend/src/presentation/components/chat/ChatBox.jsx:91-115`, `App.jsx:616-625`; JS cũ `chat.js:135-136, 163`, `rooms.js:2428-2455`
+- **Cập nhật sau review lần 2**:
+  - Cùng phụ thuộc như FE-01: có `roomCode` thì dùng roomHub; chỉ có `matchId` (demo) thì thêm relay `chat:send` vào WS trận demo trong `server.js`, gửi cho mọi người trong trận kể cả khán giả.
+  - Áp dụng cùng validate như BE-07: tối đa 500 ký tự, giới hạn 5 tin/3 giây.
+  - Tên người gửi lấy từ phe (Đỏ/Đen/Khán giả), **không** dùng user hardcode "Nguyễn Tấn Sang" (`ChatBox.jsx:7`, `chat.js:25-27`).
 - **Sửa**: nối ChatBox với `chat:send`/`ChatMessage` của roomHub, trạng thái "đã gửi" lấy từ ack server. Trong JS cũ: map user thành bản sao `{ id, name: displayName || username, avatar, role }` (hiện tại `currentUser.name` undefined → TypeError), lưu hàm unsubscribe của `onChatEvent` và gọi trước khi đăng ký lại (đang render tin nhắn N lần).
 
 ### FE-06 · Trận đấu React không gửi xác thực; công cụ debug lộ ra production
@@ -274,6 +318,10 @@ Không có `process.on('unhandledRejection'|'uncaughtException')`, không có `w
 ### BE-14 · Phòng riêng tư đoán được mã
 - **File**: `RoomManager.js:12`, `roomHub.js:73`
 - **Sửa**: mã phòng riêng tư 10 ký tự base32 (`crypto.randomBytes`) hoặc thêm `inviteToken` riêng bắt buộc khi vào phòng riêng tư. Kết hợp rate limit BE-13.
+- **Trạng thái (review lần 2)**: phần backend đã làm, **chưa commit**. Việc còn thiếu:
+  1. Test: tạo phòng riêng tư → mã khớp `/^[0-9A-HJKMNP-TV-Z]{10}$/`; tra cứu bằng chữ thường vẫn tìm được; phòng công khai vẫn là 6 chữ số.
+  2. `LobbyNavigation.jsx:31, 98, 101`: chấp nhận 6 chữ số hoặc 10 ký tự base32, `maxLength={10}`, tự chuyển thành chữ hoa, không xoá chữ cái.
+  3. Rate limit cho mọi đường tra mã phòng: xem REV-04.
 
 ### BE-15 · Upload avatar
 - **File**: `profileValidator.js:38-48`, `user.routes.js:42-50, 121-122`, `uploadAvatar.js:33-37`
@@ -324,6 +372,177 @@ Không có `process.on('unhandledRejection'|'uncaughtException')`, không có `w
 
 ---
 
+## PHASE 4 — SỬA LẠI SAU REVIEW LẦN 2 (làm TRƯỚC các task còn lại)
+
+> Mỗi REV là **một commit riêng**: `fix(REV-xx): ...`. Mỗi REV phải có test tái hiện đúng kịch bản lỗi.
+> Số dòng ghi ở đây là tại commit `fec60ae`.
+
+### REV-01 · [HIGH] Hai người cùng rớt mạng → xử thắng sai người, đuổi nhầm người đang online (hồi quy BE-06)
+- **File**: `backend/src/presentation/websocket/roomHub.js:100-104`, `backend/src/domain/entities/Room.js:285-297`
+- **Lỗi**: dữ liệu reconnect đã được tách theo từng bên (`reconnectState.bySide`), nhưng hub vẫn nhận diện người kết nối lại bằng field phẳng `reconnectState.disconnectedUserId`. Field này bị ghi đè bởi người rớt **sau cùng**.
+- **Kịch bản**:
+  1. t0: Đỏ rớt mạng.
+  2. t0+30: Đen rớt mạng.
+  3. t0+40: Đỏ vào lại → `isReconnectingPlayer` = false, nên timer của Đỏ vẫn chạy.
+  4. t0+60: `handleDisconnectTimeout(RED)` xử **Đen (đang vắng) thắng**, cộng Elo cho Đen, rồi `removeParticipant` Đỏ đang online.
+- **Sửa**:
+  - Xác định người kết nối lại bằng `bySide.red?.userId === userId || bySide.black?.userId === userId`.
+  - Khi một bên vào lại: chỉ xoá `bySide[side]` và timer của bên đó. Chỉ resume ván khi `bySide.red` và `bySide.black` đều null.
+  - `handleDisconnectTimeout(side)` phải kiểm tra lại `bySide[side]` vẫn còn. Nếu bên đó đã vào lại thì bỏ qua.
+  - Bỏ hẳn hoặc chỉ đọc (không dùng để quyết định) các field phẳng `disconnectedUserId/disconnectedSide`.
+- **Test** (mức hub, không chỉ gọi method của Room): đúng thứ tự Đỏ rớt → Đen rớt → Đỏ vào lại → hết hạn của Đỏ. Kết quả mong đợi: không ai bị xử thua do Đỏ; ván vẫn tạm dừng chờ Đen.
+
+### REV-02 · [MEDIUM] `settleMatch` bị race → ván mới bị chốt nhầm kết quả ván cũ
+- **File**: `roomHub.js:1137-1200`
+- **Lỗi**: `settledMatchId` và `readyStates.clear()` chỉ được set **sau** các lệnh `await` (ghi Elo, ghi DB). Nếu trong lúc chờ có người gửi `start` thì ván mới bắt đầu, sau đó kết quả ván cũ bị ghi và broadcast dưới `matchId` mới. Ván mới khi kết thúc sẽ bị `return` sớm: không có Elo, không có `matchEnded`, phòng kẹt ở FINISHED.
+- **Sửa**: ngay đầu hàm, **trước mọi `await`**:
+  - lưu `const matchId = room.matchId`;
+  - set `room.settledMatchId = matchId`, `room.matchState.status = 'completed'`;
+  - gọi `room.readyStates.clear()`;
+  - huỷ turn timer.
+
+  Sau đó mọi bước ghi DB, history, broadcast đều dùng biến `matchId` đã lưu. Chặn `start` khi `room.settling === true`.
+- **Test**: gọi `settleMatch` với repo giả có `await` chậm, gửi `start` giữa chừng. Ván mới phải có `matchId` khác và kết quả ván cũ không bị gắn vào nó.
+
+### REV-03 · [MEDIUM] Whitelist mã lỗi biến lỗi nghiệp vụ hợp lệ thành 500 (hồi quy BE-12)
+- **File**: `backend/src/presentation/http/errorResponse.js:39-44`
+- **Lỗi**: lỗi chỉ được trả về client khi mã có trong whitelist **và** status là 4xx. Các trường hợp đã kiểm chứng bị biến thành 500:
+  - `OAUTH_DISABLED` (503)
+  - header `Authorization: Bearer ` rỗng (`NO_TOKEN` → lẽ ra 401)
+  - `USER_KICKED` khi join (lẽ ra 403)
+  - `FILE_TOO_LARGE`
+
+  Các mã đang được throw nhưng thiếu trong whitelist: `CALL_ALREADY_EXISTS, CALL_NOT_FOUND, CANNOT_KICK_HOST, FILE_TOO_LARGE, INVALID_USER, NO_TOKEN, NOT_ALL_READY, OPPONENT_NOT_FOUND, USER_KICKED, USER_NOT_IN_ROOM`.
+- **Sửa** (đúng như plan gốc BE-12):
+  - Mở rộng `core/errors/AppError.js` để có các mã auth/user/room/friends. Lỗi nghiệp vụ throw bằng `AppError`.
+  - `errorResponse` trả nguyên lỗi khi `err instanceof AppError` (cho phép cả 4xx và 503).
+  - Lỗi khác thì log và trả 500 `INTERNAL_ERROR`.
+  - Thêm 1 test duyệt mọi `err.code = '...'` trong `src/` (grep) và khẳng định từng mã đều được map đúng.
+- **Test**: 4 trường hợp đã kiểm chứng ở trên trả đúng status.
+
+### REV-04 · [MEDIUM-HIGH] Rate limit bị vượt qua bằng `X-Forwarded-For`; tra mã phòng chưa được giới hạn hết
+- **File**: `backend/src/presentation/http/middlewares/rateLimiter.js:170-177`, `room.routes.js:142` (`/invitation`), `/join`, `roomHub.js:288-293` (WS upgrade)
+- **Lỗi**:
+  - `getClientIp` luôn tin header XFF. Đổi XFF mỗi request là không bao giờ bị 429; đã thử 15 lần login và 40 lần tra phòng, không có 429 nào.
+  - Key do attacker tự chọn làm map phình ra, ăn bộ nhớ.
+  - Ba đường `/invitation`, `/join` và WS upgrade (trả 404 khác với 101) vẫn dò mã phòng được không giới hạn.
+- **Sửa**:
+  - Chỉ đọc XFF khi `process.env.TRUST_PROXY === 'true'`, còn lại dùng `req.socket.remoteAddress`. Thêm `TRUST_PROXY=false` vào `.env.example`.
+  - Giới hạn số key trong map (vd 10.000). Khi đầy, xoá key cũ nhất.
+  - Áp `roomLookupLimiter` cho `/invitation`, `/join` và WS upgrade `/ws/room/:code`. WS bị vượt hạn mức thì trả `HTTP/1.1 429` rồi `socket.destroy()`.
+  - IP limiter của login chỉ đếm lần **thất bại**. Username limiter chỉ làm chậm (vd tăng delay), **không** khoá hẳn, để kẻ xấu không khoá được tài khoản người khác.
+- **Test**: đổi XFF liên tục vẫn bị 429 sau N lần; tra `/invitation` quá N lần bị 429.
+
+### REV-05 · [MEDIUM] WS không kiểm tra token đã bị thu hồi / tài khoản bị khoá
+- **File**: `roomHub.js:280`
+- **Lỗi**: WS chỉ kiểm chữ ký JWT. Token đã bị thu hồi sau khi đổi mật khẩu (BE-02), hoặc của tài khoản không còn ACTIVE, vẫn vào phòng và chơi được.
+- **Sửa**: trước `handleUpgrade`, gọi `userRepository.findById` và kiểm tra `status === 'ACTIVE'` cùng `iat >= password_changed_at`. Tái sử dụng hàm kiểm tra của `authMiddleware.js`: tách ra một hàm dùng chung. Đồng thời sửa `authMiddleware.js:39` đang dùng `PgUserRepository` mà chưa `require`.
+- **Test**: đổi mật khẩu xong, token cũ mở WS → 401.
+
+### REV-06 · [MEDIUM] Bảng `pvp_matches` không bao giờ được ghi ở production
+- **File**: `roomHub.js:47, 1504`
+- **Lỗi**: `pvpMatchRepository = null` mặc định; singleton được tạo bằng `new RoomHub()` nên chỉ test mới ghi kết quả.
+- **Sửa**: mặc định dùng `new PgPvpMatchRepository()`, giống cách `userRepository` đã làm.
+- **Test**: hub tạo không truyền repo → `pvpMatchRepository` khác null.
+
+### REV-07 · [MEDIUM] Sweeper xoá phòng đang có người; phòng SYSTEM_ERROR không bao giờ được dọn
+- **File**: `RoomManager.js:113-139`, `roomHub.js:1340-1359`
+- **Lỗi**:
+  - `lastActivityAt` chỉ được cập nhật ở `addParticipant/startGame/applyMove`. Chủ phòng ngồi chờ một mình hơn 30 phút (vẫn đang kết nối) thì phòng bị xoá; hub không được báo nên mọi message sau đó nhận `ROOM_NOT_FOUND`.
+  - Nhánh SYSTEM_ERROR không gọi `settleMatch` và không xoá ghế, nên phòng không bao giờ bị dọn.
+- **Sửa**:
+  - Cập nhật `lastActivityAt` ở mọi message và mọi connect WS.
+  - Sweeper **bỏ qua** phòng còn socket đang mở (hub cung cấp hàm `hasLiveSockets(code)`, hoặc sweeper chạy trong hub).
+  - Nhánh SYSTEM_ERROR đi qua `settleMatch(room, null, 'SYSTEM_ERROR')` và xoá ghế của người đã rời.
+  - Xoá method `joinRoom` bị trùng ở `RoomManager.js:155` và `:174` (bản ở 155 là code chết).
+- **Test**: phòng có socket mở, `lastActivityAt` cũ hơn 30 phút → sweeper không xoá.
+
+### REV-08 · [MEDIUM] `/api/auth/*` và `/api/rooms/*` không gửi header CORS (hồi quy CLEAN-05)
+- **File**: `backend/src/presentation/http/routes/auth.routes.js:2`, `room.routes.js:2`
+- **Lỗi**: hai file `import corsHeaders` nhưng không gọi. Demo qua proxy Vite không bị ảnh hưởng, nhưng gọi từ origin khác (đặt `VITE_API_URL` trỏ thẳng sang backend) thì trình duyệt chặn login/register/rooms.
+- **Sửa**:
+  - Áp `corsHeaders(request)` và xử lý `OPTIONS` ở đầu cả 2 handler, giống friends/user/matches.
+  - Thêm `CORS_ORIGINS=http://localhost:3000` vào `backend/.env.example`.
+  - Thêm `VITE_BACKEND_URL` vào `frontend/.env.example`, kèm ghi chú: đây là biến shell dùng cho proxy Vite.
+- **Test**: `OPTIONS /api/auth/login` với `Origin: http://localhost:3000` → có header `Access-Control-Allow-Origin`.
+
+### REV-09 · [LOW] Thêm bạn chiều ngược lại bị lỗi sau migration 005
+- **File**: `backend/src/infrastructure/database/repositories/PgFriendRepository.js:50-53`
+- **Lỗi**: `ON CONFLICT (user_id, friend_id)` không áp dụng cho index đối xứng `LEAST/GREATEST`. Đã có (A,B) mà chèn thêm (B,A) sẽ bị unique violation.
+- **Sửa**: trước khi chèn, kiểm tra quan hệ đã tồn tại theo cả 2 chiều. Nếu có thì trả về bản ghi đó; nếu không thì mới chèn. Bắt lỗi unique `23505` và trả lỗi nghiệp vụ `ALREADY_FRIENDS`.
+
+### REV-10 · [LOW-MEDIUM] Migration: kiểm tra "đã chạy chưa" nằm ngoài lock
+- **File**: `backend/src/migrations/migrate.js:107-115` so với `:59`
+- **Sửa**: sau `pg_advisory_xact_lock`, trong cùng transaction, kiểm tra lại `migrations_history`. Nếu file đã được chạy thì `COMMIT` và bỏ qua file đó.
+
+### REV-11 · [MEDIUM] Đồng hồ tổng không được thực thi; thời gian trước khi rớt mạng không bị trừ (thiếu sót BE-05)
+- **File**: `roomHub.js:461-466, 1230-1272`
+- **Sửa**:
+  - `armTurnTimer` hẹn giờ theo `min(thời gian còn của lượt 60s, remainingClocks[color])`. Bên nào hết đồng hồ tổng thì `settleMatch(..., 'TIMEOUT')`.
+  - Khi tạm dừng vì rớt mạng: trừ ngay thời gian đã dùng vào `remainingClocks[color]`, và lưu thời gian còn lại của lượt để resume tiếp, **không** reset `turnStartedAt` về đầy 60s.
+
+### REV-12 · [MEDIUM] Heartbeat dùng JSON ping (trình duyệt không tự trả lời); relay WebRTC trước khi được chấp nhận (thiếu sót BE-07)
+- **File**: `roomHub.js:34, 761, 792, 823, 1032-1054`
+- **Lỗi**:
+  - Heartbeat đang gửi `{type:'ping'}` dạng JSON. Client nào im lặng quá 10 giây là bị ngắt. Khi FE-01/FE-05 nối vào roomHub, người chơi sẽ bị đá ra liên tục và ván cờ bị tạm dừng.
+  - offer/answer/candidate vẫn được relay khi cuộc gọi còn `RINGING`.
+  - `isSameCall` trả `true` khi thiếu `callId`.
+- **Sửa**:
+  - Đổi sang `ws.ping()` ở mức protocol, kèm cờ `isAlive` cập nhật trong sự kiện `'pong'`. Trình duyệt tự trả pong, không cần code client. Vẫn chấp nhận `{type:'pong'}` cũ để tương thích.
+  - Chỉ relay offer/answer/candidate khi `room.videoCall.status === 'CONNECTED'` (đã accept).
+  - `isSameCall` bắt buộc có `callId` và phải khớp.
+
+### REV-13 · [LOW] Hoà cờ: thông báo sai, PvE không bao giờ hoà được (thiếu sót BE-20)
+- **File**: `roomHub.js:1200-1202`, `PveMatch.js:29-34`, migration ràng buộc `ck_pve_matches_end_reason`, adapter SQLite trong `config/db.js`
+- **Sửa**:
+  - Khi hoà, broadcast thông báo "Ván cờ hoà (đạt giới hạn số nước)" thay vì "Trận đấu đã bị huỷ.".
+  - PvE: thêm `DRAW_PLY_LIMIT` vào `PVE_END_REASON` và vào constraint (migration mới); áp dụng giới hạn 300 ply trong `applyAndPersistMove`.
+  - Đồng bộ constraint result/end_reason cho schema SQLite dùng trong test.
+
+### REV-14 · [LOW-MEDIUM] Reset mật khẩu: chưa dùng transaction, cửa sổ rate limit vẫn lệch múi giờ (thiếu sót BE-02)
+- **File**: `resetPassword.js:32-42, 76-91`, `PgPasswordResetRepository.js:25-29`
+- **Sửa**:
+  - Validate mật khẩu mới (tối đa 72 byte) **trước** khi hash.
+  - Đánh dấu token đã dùng và đổi mật khẩu trong **một transaction**.
+  - Đổi điều kiện cửa sổ rate limit thành `created_at >= NOW() - make_interval(mins => $2)`.
+
+### REV-15 · [LOW-MEDIUM] Phần còn thiếu của SEC-05, BE-13, BE-16 (auth)
+- Thêm `GOOGLE_CLIENT_ID=` vào `backend/.env.example` (commit SEC-05 ghi đã thêm nhưng thực tế không có).
+- `oauthLogin.js:95`: sanitize `redirectUrl` giống login. `sanitizeRedirectUrl` (`loginUser.js:15`) phải chặn thêm ký tự điều khiển, tab và xuống dòng (`"/\t/evil.com"` hiện lọt qua).
+- `oauthLogin.js:124`: tên lấy từ Google phải qua `validateDisplayName`; không hợp lệ thì dùng phần trước `@` của email.
+- Migration mới: `CREATE UNIQUE INDEX ... ON users (LOWER(username))`. Nếu dữ liệu cũ bị trùng theo chữ hoa/thường thì migration báo lỗi rõ ràng, không tự xoá.
+- `loginUser.js:89-93`: tài khoản không ACTIVE trả **cùng** thông báo chung "Sai thông tin đăng nhập".
+- `docs/OAUTH_SETUP.md` đã có. Thêm 1 dòng link tới file này trong README.
+
+### REV-16 · [LOW] Phần còn thiếu của FE-03, FE-04, frontend JS cũ
+- Nút "vào phòng bằng mã" và nút "Vào" trên thẻ phòng phải yêu cầu đăng nhập (`rooms.js:1010, 1145`; `api.js:275` `joinRoomByCode`).
+- Xoá user hardcode "Nguyễn Tấn Sang" còn sót ở `rooms.js:2498-2502`, `chat.js:25-27`, `ChatBox.jsx:7`.
+- Escape các giá trị còn sót: `rooms.js:1093` (`statusMeta.label`), `:1102` (`hostElo`), `:1108`, `:1112`, `:1352` (`friend.elo`). Với số thì ép kiểu `Number(...)`.
+- `rooms.js:973, 1547`: bỏ `escapeHtml` bên trong lời gọi `showToast`, vì hàm này đã tự escape (đang hiện `A&amp;B`).
+- `js/auth.js:351, 694, 869`: đọc `import.meta.env.VITE_API_URL ?? '/api'` thay cho `window.VITE_API_URL`. `:506`: bỏ `'facebook'`. `:522-537`: bỏ đoạn tạo session giả khi không có `fetch`.
+- `auth.js:214`: chỉ nhận token reset từ `?token=` (bỏ `#token=`).
+
+### REV-17 · [LOW] Phần còn thiếu của BE-08
+- `createRoom.js:31-37`: key cache là `${userId}:${requestId}`; dọn các entry quá 3 giây trong sweeper.
+- Khi ghế giữ qua HTTP bị giải phóng (BE-10): broadcast trạng thái phòng và xoá `readyStates` của user đó.
+
+### REV-18 · [LOW] CI: PR từ fork vẫn điều khiển được job có secret Jira
+- **File**: `.github/scripts/ai_pr_tester.py` (nhánh xử lý khi fail, `resolve_pull_request` khoảng dòng 155)
+- **Sửa**:
+  - Khi `HEAD_REPO != REPOSITORY` (PR từ fork): không tạo Jira Bug, chỉ comment ngắn và không chèn nội dung log của PR vào comment.
+  - `resolve_pull_request`: bắt buộc khớp head SHA, không được fallback `data[0]`.
+
+### REV-19 · [MEDIUM — quan trọng cho buổi demo] Trận demo COT-615 tự chạy đồng hồ trước khi có người vào
+- **File**: `backend/src/domain/entities/cot615Match.js`, `server.js` (route demo)
+- **Lỗi**: trận được tạo ở lần GET đầu tiên và đồng hồ của Đỏ chạy sau 3 giây dù chưa ai kết nối. Đỏ không đi trong khoảng 2 phút là thua do hết giờ, và trận đứng ở trạng thái kết thúc cho tới khi restart backend.
+- **Sửa** (chỉ áp dụng khi `ENABLE_DEMO_MATCH=true`):
+  - Đồng hồ chỉ bắt đầu khi **cả Đỏ và Đen đều đã kết nối**.
+  - Khi trận kết thúc: tự reset ván mới sau 10 giây, hoặc thêm message `{type:'rematch'}` để 2 người chơi bấm "Chơi lại".
+  - Thêm `DEMO_CLOCK_SECONDS` (mặc định 600) vào `.env.example` để demo không bị gấp.
+- **Test**: tạo trận và chờ quá thời gian đồng hồ khi chưa đủ 2 người → chưa ai thua.
+
+---
+
 ## PHỤ LỤC A — Những phần đã kiểm tra và ỔN (không cần sửa)
 - Toàn bộ SQL dùng tham số `$n` → không có SQL injection.
 - Luật cờ: cung Tướng/Sĩ, Tượng không qua sông & bị chặn mắt, Mã bị cản chân, Pháo ăn qua đúng 1 ngòi, Tốt chỉ đi ngang sau khi qua sông và không lùi, lộ mặt Tướng, cấm tự chiếu, hết nước = thua — **đều đúng**. Hệ toạ độ thống nhất (hàng 0 = hàng cuối của Đỏ, cột 0 = `a`).
@@ -333,10 +552,24 @@ Không có `process.on('unhandledRejection'|'uncaughtException')`, không có `w
 - Workflow không nội suy `${{ github.event.* }}` trực tiếp trong `run:` (đã qua `env:`).
 
 ## PHỤ LỤC B — Checklist tiến độ
-- [x] SEC-01 · [x] SEC-02 · [x] SEC-03 · [x] SEC-04
-- [x] SEC-05 · [x] BE-01 · [x] BE-02 · [x] BE-03 · [x] BE-04 · [x] BE-05 · [x] BE-06 · [x] BE-07 · [x] BE-08 · [x] BE-09 · [x] BE-10 · [x] BE-11
-- [ ] FE-01 · [x] FE-02 · [x] FE-03 · [x] FE-04 · [ ] FE-05 · [ ] FE-06 · [ ] FE-07 · [ ] FE-08 · [x] FE-09 · [ ] FE-10 · [x] FE-11
-- [x] BE-12 · [x] BE-13 · [ ] BE-14 · [x] BE-15 · [x] BE-16 · [x] BE-17 · [x] BE-18 · [x] BE-19 · [x] BE-20
-- [ ] CLEAN-01 · [ ] CLEAN-02 · [ ] CLEAN-03 · [ ] CLEAN-04 · [x] CLEAN-05
+Ký hiệu: `[x]` đạt · `[~]` đã làm nhưng còn thiếu, phần thiếu nằm ở REV ghi bên cạnh · `[ ]` chưa làm.
+
+**Đợt 1 (đã review lần 2):**
+- [x] SEC-01 · [x] SEC-02 · [x] SEC-03 · [x] SEC-04 · [~] SEC-05 (REV-03, REV-15)
+- [x] BE-01 · [~] BE-02 (REV-05, REV-14) · [x] BE-03 · [~] BE-04 · [~] BE-05 (REV-02, REV-11) · [~] BE-06 (REV-01) · [~] BE-07 (REV-12) · [~] BE-08 (REV-07, REV-17) · [x] BE-09 · [x] BE-10 · [x] BE-11 (REV-19 cho demo)
+- [x] FE-02 · [~] FE-03 (REV-16) · [~] FE-04 (REV-16) · [x] FE-09 · [x] FE-11
+- [~] BE-12 (REV-03) · [~] BE-13 (REV-04, REV-15) · [x] BE-15 · [~] BE-16 (REV-15) · [~] BE-17 (REV-10) · [~] BE-18 (REV-06, REV-09) · [x] BE-19 · [~] BE-20 (REV-13)
+- [~] CLEAN-05 (REV-08)
+
+**Làm ngay (dọn working tree):**
+- [x] BE-14 (phần backend đã làm nhưng chưa commit; còn thiếu test và sửa `LobbyNavigation.jsx`)
+
+**Phase 4 — làm tiếp theo, đúng thứ tự:**
+- [ ] REV-01 · [ ] REV-02 · [ ] REV-03 · [ ] REV-04 · [ ] REV-05 · [ ] REV-06 · [ ] REV-07 · [ ] REV-08 · [ ] REV-09 · [ ] REV-10
+- [ ] REV-11 · [ ] REV-12 · [ ] REV-13 · [ ] REV-14 · [ ] REV-15 · [ ] REV-16 · [ ] REV-17 · [ ] REV-18 · [ ] REV-19
+
+**Còn lại của plan gốc (làm sau Phase 4):**
+- [ ] FE-06 · [ ] FE-08 · [ ] FE-07 · [ ] FE-01 · [ ] FE-05 · [ ] FE-10
+- [ ] CLEAN-01 · [ ] CLEAN-02 · [ ] CLEAN-03 · [ ] CLEAN-04
 
 **Lưu ý vận hành**: vì secret JWT mặc định đã công khai trong source, sau khi xong SEC-02 phải đặt `JWT_SECRET` mới trên mọi môi trường (mọi token cũ sẽ mất hiệu lực — đây là điều mong muốn). Nếu repo GitHub từng public hoặc có PR từ fork chạy qua workflow `ai-pr-test.yml`, hãy **xoay vòng (rotate) `JIRA_API_TOKEN` và `GEMINI_API_KEY`**.
