@@ -416,6 +416,15 @@ class RoomHub {
 
     // 3. Bắt đầu trận đấu (start)
     if (type === 'start') {
+      // REV-02: đang chốt kết quả ván trước (ghi Elo/DB) -> không cho bắt đầu ván mới
+      if (room.settling) {
+        this.send(socket, {
+          type: 'error',
+          code: 'MATCH_SETTLING',
+          message: 'Đang tổng kết ván trước, vui lòng thử lại sau 1-2 giây.',
+        });
+        return;
+      }
       try {
         const startResult = room.startGame(meta.userId);
         this.broadcastToRoom(room.code, {
@@ -1159,18 +1168,39 @@ class RoomHub {
       return room.lastSettlement || null;
     }
 
-    const winnerUser = winnerColor ? room.players[winnerColor] : null;
-    const loserColor = winnerColor === 'red' ? 'black' : winnerColor === 'black' ? 'red' : null;
-    const loserUser = loserColor ? room.players[loserColor] : null;
-
+    // REV-02: chốt trạng thái NGAY, TRƯỚC mọi await. Trước đây các bước này nằm
+    // sau `await` nên nếu có người bấm "start" trong lúc chờ ghi Elo/DB, ván mới
+    // sẽ bị gắn kết quả của ván cũ và ván mới kết thúc mà không có Elo/matchEnded.
+    const matchId = room.matchId;
+    room.settling = true;
+    room.settledMatchId = matchId;
     room.matchState.status = 'completed';
     room.matchState.winner = winnerColor || null;
     room.matchState.endReason = endReason;
     room.matchState.isPaused = false;
     room.status = 'WAITING_OPPONENT';
     room.reconnectState = null;
+    room.readyStates.clear();
     this.clearDisconnectTimer(room.code);
     this.clearTurnTimer(room.code);
+
+    try {
+      return await this.persistSettlement(room, matchId, winnerColor, endReason, options);
+    } finally {
+      room.settling = false;
+    }
+  }
+
+  /**
+   * REV-02: phần ghi kết quả (Elo, history, DB, broadcast) — tách ra để
+   * settleMatch khoá trạng thái trước khi await.
+   * @param {object} room
+   * @param {string} matchId mã ván ĐÃ chốt (không đọc lại room.matchId)
+   */
+  async persistSettlement(room, matchId, winnerColor, endReason, options) {
+    const winnerUser = winnerColor ? room.players[winnerColor] : null;
+    const loserColor = winnerColor === 'red' ? 'black' : winnerColor === 'black' ? 'red' : null;
+    const loserUser = loserColor ? room.players[loserColor] : null;
 
     let winnerElo = { change: 0, newRating: winnerUser?.eloRating ?? 1000 };
     let loserElo = { change: 0, newRating: loserUser?.eloRating ?? 1000 };
@@ -1188,7 +1218,7 @@ class RoomHub {
     }
 
     const record = {
-      matchId: room.matchId,
+      matchId,
       roomCode: room.code,
       winnerUserId: winnerUser ? winnerUser.id : null,
       loserUserId: loserUser ? loserUser.id : null,
@@ -1210,8 +1240,6 @@ class RoomHub {
       }
     }
 
-    room.readyStates.clear();
-    room.settledMatchId = room.matchId;
     room.lastSettlement = record;
 
     const defaultMessage = winnerColor
@@ -1220,7 +1248,7 @@ class RoomHub {
 
     this.broadcastToRoom(room.code, {
       type: 'matchEnded',
-      matchId: room.matchId,
+      matchId,
       // `winner` giữ đúng ngữ nghĩa cũ (màu thắng) để client hiện có không vỡ
       winner: winnerColor || null,
       winnerUserId: winnerUser ? winnerUser.id : null,
