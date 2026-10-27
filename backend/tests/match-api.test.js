@@ -52,11 +52,14 @@ test('read-only match endpoint returns the assigned match state', async (t) => {
   }));
 
   const address = server.address();
-  const response = await fetch(`http://127.0.0.1:${address.port}/api/matches/COT-615`);
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/matches/COT-615`, {
+    headers: { Origin: 'http://localhost:3000' },
+  });
   const match = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  // CLEAN-05: CORS theo whitelist -> phản chiếu đúng origin được phép (không còn '*')
+  assert.equal(response.headers.get('access-control-allow-origin'), 'http://localhost:3000');
   assert.equal(match.board.length, 32);
   assert.equal(match.countdownSeconds, 3);
 
@@ -65,6 +68,22 @@ test('read-only match endpoint returns the assigned match state', async (t) => {
   const activeMatch = await activeResponse.json();
   assert.equal(activeMatch.status, 'active');
   assert.equal(activeMatch.countdownSeconds, null);
+});
+
+test('CORS: origin lạ không được cấp Access-Control-Allow-Origin', async (t) => {
+  const server = createServer({ now: () => Date.parse('2026-10-15T00:00:00.000Z') });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  }));
+
+  const address = server.address();
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/matches/COT-615`, {
+    headers: { Origin: 'https://evil.example.com' },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('access-control-allow-origin'), null, 'origin lạ không được cấp CORS');
 });
 
 test('read-only match endpoint rejects unknown matches and mutations', async (t) => {

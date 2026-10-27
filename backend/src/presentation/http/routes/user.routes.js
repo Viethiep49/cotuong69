@@ -1,4 +1,5 @@
 const { URL } = require('node:url');
+const { corsHeaders } = require('../../../core/cors');
 const { sendError } = require('../utils/errorResponse');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
 const UpdateProfileUseCase = require('../../../application/useCases/updateProfile');
@@ -9,9 +10,6 @@ function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   });
   response.end(JSON.stringify(body));
 }
@@ -131,6 +129,11 @@ function createUserHandler({
   authMiddlewareOptions = {},
 } = {}) {
   return async (request, response) => {
+    // CLEAN-05: CORS theo whitelist (thay cho Access-Control-Allow-Origin: *)
+    for (const [headerName, headerValue] of Object.entries(corsHeaders(request))) {
+      response.setHeader(headerName, headerValue);
+    }
+
     if (request.method === 'OPTIONS') {
       sendJson(response, 204, {});
       return;

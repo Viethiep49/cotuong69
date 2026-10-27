@@ -1,4 +1,5 @@
 const { URL } = require('node:url');
+const { corsHeaders } = require('../../../core/cors');
 const { sendError } = require('../utils/errorResponse');
 const RegisterUserUseCase = require('../../../application/useCases/registerUser');
 const LoginUserUseCase = require('../../../application/useCases/loginUser');
@@ -13,9 +14,6 @@ function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   });
   response.end(JSON.stringify(body));
 }

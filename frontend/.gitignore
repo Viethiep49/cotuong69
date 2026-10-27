@@ -1,4 +1,4 @@
-﻿node_modules/
+node_modules/
 dist/
 dist-ssr/
 *.local
@@ -6,3 +6,7 @@ dist-ssr/
 .env.*.local
 .DS_Store
 *.log
+
+# CLEAN-05: chặn mọi file env, chỉ giữ file mẫu
+.env.*
+!.env.example
