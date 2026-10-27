@@ -333,8 +333,8 @@ Không có `process.on('unhandledRejection'|'uncaughtException')`, không có `w
 - Workflow không nội suy `${{ github.event.* }}` trực tiếp trong `run:` (đã qua `env:`).
 
 ## PHỤ LỤC B — Checklist tiến độ
-- [ ] SEC-01 · [ ] SEC-02 · [ ] SEC-03 · [ ] SEC-04
-- [ ] SEC-05 · [ ] BE-01 · [ ] BE-02 · [ ] BE-03 · [ ] BE-04 · [ ] BE-05 · [ ] BE-06 · [ ] BE-07 · [ ] BE-08 · [ ] BE-09 · [ ] BE-10 · [ ] BE-11
+- [x] SEC-01 · [x] SEC-02 · [x] SEC-03 · [x] SEC-04
+- [x] SEC-05 · [x] BE-01 · [x] BE-02 · [ ] BE-03 · [ ] BE-04 · [ ] BE-05 · [ ] BE-06 · [ ] BE-07 · [ ] BE-08 · [ ] BE-09 · [ ] BE-10 · [ ] BE-11
 - [ ] FE-01 · [ ] FE-02 · [ ] FE-03 · [ ] FE-04 · [ ] FE-05 · [ ] FE-06 · [ ] FE-07 · [ ] FE-08 · [ ] FE-09 · [ ] FE-10 · [ ] FE-11
 - [ ] BE-12 · [ ] BE-13 · [ ] BE-14 · [ ] BE-15 · [ ] BE-16 · [ ] BE-17 · [ ] BE-18 · [ ] BE-19 · [ ] BE-20
 - [ ] CLEAN-01 · [ ] CLEAN-02 · [ ] CLEAN-03 · [ ] CLEAN-04 · [ ] CLEAN-05
