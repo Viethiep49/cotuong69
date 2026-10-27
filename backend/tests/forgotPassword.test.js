@@ -118,25 +118,18 @@ describe('Nghiệm thu Task COT-575: Quên mật khẩu & gửi OTP/Token qua Em
       assert.equal(oldTokenRecord.is_used, 1, 'Token cũ phải bị vô hiệu hóa khi có yêu cầu mới');
     });
 
-    test('Áp dụng giới hạn tần suất: vượt quá 3 lần / 10 phút bị từ chối 429', async () => {
+    test('BE-02: vượt giới hạn tần suất vẫn trả response chung (không lộ email tồn tại)', async () => {
       // Đã gửi 2 lần ở 2 test trên, gửi tiếp lần 3 (thành công)
       await forgotPasswordUseCase.execute({
         email: 'forgot@cotuong.vn',
       });
 
-      // Gửi lần thứ 4 -> Bị chặn vì vượt quá giới hạn 3 lần/10 phút
-      await assert.rejects(
-        async () => {
-          await forgotPasswordUseCase.execute({
-            email: 'forgot@cotuong.vn',
-          });
-        },
-        (err) => {
-          assert.equal(err.code, 'RATE_LIMIT_EXCEEDED');
-          assert.equal(err.statusCode, 429);
-          return true;
-        }
-      );
+      // Gửi lần thứ 4 -> bị rate limit nhưng KHÔNG được trả 429 riêng cho email tồn tại
+      const fourth = await forgotPasswordUseCase.execute({ email: 'forgot@cotuong.vn' });
+      const unknown = await forgotPasswordUseCase.execute({ email: 'khong_ton_tai@cotuong.vn' });
+
+      assert.deepEqual(fourth, unknown);
+      assert.equal(fourth.success, true);
     });
   });
 

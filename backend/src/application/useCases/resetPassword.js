@@ -75,11 +75,19 @@ class ResetPasswordUseCase {
     // Băm mật khẩu mới bằng Bcrypt
     const newHash = await this.hasher.hashPassword(newPassword);
 
-    // Cập nhật CSDL
+    // BE-02: dùng token NGUYÊN TỬ trước khi đổi mật khẩu — chặn dùng 2 lần khi
+    // có 2 request song song (kiểm tra ở trên chỉ để trả lỗi thân thiện).
+    const consumedUserId = await this.resetRepository.consumeToken(cleanToken);
+    if (consumedUserId === null || Number(consumedUserId) !== Number(user.id)) {
+      const err = new Error('Mã xác thực này đã được sử dụng. Một token không thể dùng lại lần hai.');
+      err.code = 'TOKEN_ALREADY_USED';
+      throw err;
+    }
+
+    // Cập nhật CSDL (đồng thời set password_changed_at để thu hồi JWT cũ)
     await this.userRepository.updatePassword(user.id, newHash);
 
-    // Đánh dấu token đã dùng và vô hiệu hóa tất cả token cũ khác của user này
-    await this.resetRepository.markTokenUsed(cleanToken);
+    // Vô hiệu hóa tất cả token cũ còn lại của user này
     await this.resetRepository.invalidateOldTokens(user.id);
 
     return {

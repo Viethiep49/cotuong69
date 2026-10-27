@@ -48,10 +48,8 @@ class ForgotPasswordUseCase {
     // Kiểm tra giới hạn tần suất gửi: tối đa 3 lần / 10 phút
     const recentCount = await this.resetRepository.countRecentRequests(user.id, RATE_LIMIT_WINDOW_MINUTES);
     if (recentCount >= RATE_LIMIT_MAX) {
-      const err = new Error('Bạn đã yêu cầu đặt lại mật khẩu quá số lần cho phép (tối đa 3 lần trong 10 phút). Vui lòng thử lại sau.');
-      err.code = 'RATE_LIMIT_EXCEEDED';
-      err.statusCode = 429;
-      throw err;
+      // BE-02: không trả 429 riêng cho email tồn tại (lộ tài khoản) — vẫn trả response chung
+      return GENERIC_RESPONSE;
     }
 
     // Vô hiệu hóa token cũ khi có yêu cầu mới
@@ -59,7 +57,8 @@ class ForgotPasswordUseCase {
 
     // Tạo token đặt lại mật khẩu có thời hạn 15 phút
     const token = crypto.randomBytes(32).toString('hex');
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // BE-02: OTP sinh bằng CSPRNG, không dùng Math.random
+    const otpCode = crypto.randomInt(100000, 1000000).toString();
     const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_MINUTES * 60 * 1000);
 
     await this.resetRepository.createResetToken({

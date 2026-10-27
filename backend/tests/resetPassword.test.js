@@ -164,10 +164,12 @@ describe('Nghiệm thu Task COT-576: Đặt lại mật khẩu dựa trên OTP/T
       const user = await userRepo.findByUsername('reset_tester');
       const pastTime = new Date(Date.now() - 60 * 1000).toISOString();
 
+      // BE-02: DB chỉ lưu SHA-256 của token
+      const { hashToken } = require('../src/infrastructure/database/repositories/PgPasswordResetRepository');
       await db.query(
         `INSERT INTO password_reset_tokens (token, user_id, expires_at, is_used)
          VALUES ($1, $2, $3, $4)`,
-        [expiredToken, user.id, pastTime, 0]
+        [hashToken(expiredToken), user.id, pastTime, 0]
       );
 
       await assert.rejects(

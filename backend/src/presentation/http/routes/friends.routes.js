@@ -1,6 +1,7 @@
 const { URL } = require('node:url');
+const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 const { safeDecode } = require('../../../core/safeDecode');
-const { authenticateRequest } = require('../middlewares/authMiddleware');
+const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
 const GetOnlineFriendsUseCase = require('../../../application/useCases/friends/getOnlineFriends');
 const SendDirectInvitationUseCase = require('../../../application/useCases/friends/sendDirectInvitation');
 const RespondDirectInvitationUseCase = require('../../../application/useCases/friends/respondDirectInvitation');
@@ -49,6 +50,7 @@ function createFriendsHandler({
   cancelDirectInvitationUseCase = new CancelDirectInvitationUseCase(),
   invitationManager = defaultInvitationManager,
   authMiddlewareOptions = {},
+  userRepository = new PgUserRepository(),
 } = {}) {
   return async (request, response) => {
     if (request.method === 'OPTIONS') {
@@ -68,7 +70,7 @@ function createFriendsHandler({
 
     let user;
     try {
-      user = authenticateRequest(request, authMiddlewareOptions);
+      user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
     } catch (err) {
       sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
       return;

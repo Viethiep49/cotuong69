@@ -1,4 +1,12 @@
+const crypto = require('node:crypto');
 const defaultDb = require('../../../config/db');
+
+/**
+ * BE-02: chỉ lưu SHA-256 của token; DB không bao giờ chứa token thô.
+ */
+function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
 
 function toIsoString(val) {
   if (!val) return null;
@@ -39,15 +47,16 @@ class PgPasswordResetRepository {
    */
   async createResetToken({ userId, token, expiresAt }) {
     const expIso = toIsoString(expiresAt);
+    const tokenHash = hashToken(token);
     await this.db.query(
       `INSERT INTO password_reset_tokens (token, user_id, expires_at, is_used)
        VALUES ($1, $2, $3, $4)`,
-      [token, Number(userId), expIso, false]
+      [tokenHash, Number(userId), expIso, false]
     );
     const res = await this.db.query(
       `SELECT id, token, user_id, expires_at, is_used, created_at
        FROM password_reset_tokens WHERE token = $1 LIMIT 1`,
-      [token]
+      [tokenHash]
     );
     return res.rows[0];
   }
@@ -71,9 +80,25 @@ class PgPasswordResetRepository {
     const res = await this.db.query(
       `SELECT id, token, user_id, expires_at, is_used, created_at
        FROM password_reset_tokens WHERE token = $1 LIMIT 1`,
-      [token]
+      [hashToken(token)]
     );
     return res.rows[0] || null;
+  }
+
+  /**
+   * BE-02: dùng token nguyên tử — 1 câu UPDATE duy nhất, trả userId nếu token
+   * còn hợp lệ (chưa dùng + chưa hết hạn). Không thể dùng 2 lần dù request song song.
+   * @returns {Promise<number|null>}
+   */
+  async consumeToken(token) {
+    const res = await this.db.query(
+      `UPDATE password_reset_tokens SET is_used = TRUE
+       WHERE token = $1 AND is_used = FALSE AND expires_at > $2
+       RETURNING user_id`,
+      [hashToken(token), new Date().toISOString()]
+    );
+    if (!res.rows || res.rows.length === 0) return null;
+    return Number(res.rows[0].user_id);
   }
 
   /**
@@ -82,9 +107,10 @@ class PgPasswordResetRepository {
   async markTokenUsed(token) {
     await this.db.query(
       `UPDATE password_reset_tokens SET is_used = TRUE WHERE token = $1`,
-      [token]
+      [hashToken(token)]
     );
   }
 }
 
 module.exports = PgPasswordResetRepository;
+module.exports.hashToken = hashToken;

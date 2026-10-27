@@ -1,5 +1,5 @@
 const { URL } = require('node:url');
-const { authenticateRequest } = require('../middlewares/authMiddleware');
+const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
 const UpdateProfileUseCase = require('../../../application/useCases/updateProfile');
 const UploadAvatarUseCase = require('../../../application/useCases/uploadAvatar');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
@@ -152,7 +152,7 @@ function createUserHandler({
 
       let user;
       try {
-        user = authenticateRequest(request, authMiddlewareOptions);
+        user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
       } catch (err) {
         sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
         return;
@@ -184,7 +184,7 @@ function createUserHandler({
 
       let user;
       try {
-        user = authenticateRequest(request, authMiddlewareOptions);
+        user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
       } catch (err) {
         sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
         return;

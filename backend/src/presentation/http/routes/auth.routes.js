@@ -4,7 +4,7 @@ const LoginUserUseCase = require('../../../application/useCases/loginUser');
 const ForgotPasswordUseCase = require('../../../application/useCases/forgotPassword');
 const ResetPasswordUseCase = require('../../../application/useCases/resetPassword');
 const OAuthLoginUseCase = require('../../../application/useCases/oauthLogin');
-const { authenticateRequest } = require('../middlewares/authMiddleware');
+const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
 function sendJson(response, statusCode, body) {
@@ -234,7 +234,7 @@ function createAuthHandler({
       }
 
       try {
-        const decoded = authenticateRequest(request, authMiddlewareOptions);
+        const decoded = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
         const user = await userRepository.findById(decoded.id);
         if (!user) {
           sendJson(response, 404, { error: 'Người dùng không tồn tại.' });

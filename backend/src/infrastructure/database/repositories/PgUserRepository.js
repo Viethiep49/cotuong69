@@ -18,6 +18,7 @@ function toUser(row) {
     status: row.status || 'ACTIVE',
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
+    passwordChangedAt: toDate(row.password_changed_at),
   };
 }
 
@@ -29,7 +30,7 @@ class PgUserRepository {
   async findByUsername(username) {
     if (!username) return null;
     const res = await this.db.query(
-      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at
+      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at, password_changed_at
        FROM users WHERE username = $1 LIMIT 1`,
       [username.trim()]
     );
@@ -39,7 +40,7 @@ class PgUserRepository {
   async findByEmail(email) {
     if (!email) return null;
     const res = await this.db.query(
-      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at
+      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at, password_changed_at
        FROM users WHERE email = $1 LIMIT 1`,
       [email.trim().toLowerCase()]
     );
@@ -49,7 +50,7 @@ class PgUserRepository {
   async findById(id) {
     if (!id) return null;
     const res = await this.db.query(
-      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at
+      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at, password_changed_at
        FROM users WHERE id = $1 LIMIT 1`,
       [Number(id)]
     );
@@ -67,7 +68,7 @@ class PgUserRepository {
 
   async updatePassword(userId, passwordHash) {
     await this.db.query(
-      `UPDATE users SET password_hash = $1 WHERE id = $2`,
+      `UPDATE users SET password_hash = $1, password_changed_at = CURRENT_TIMESTAMP WHERE id = $2`,
       [passwordHash, Number(userId)]
     );
     return await this.findById(userId);

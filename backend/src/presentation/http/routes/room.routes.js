@@ -1,6 +1,6 @@
 const { URL } = require('node:url');
 const { safeDecode } = require('../../../core/safeDecode');
-const { authenticateRequest } = require('../middlewares/authMiddleware');
+const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
 const CreateRoomUseCase = require('../../../application/useCases/room/createRoom');
 const GetRoomByCodeUseCase = require('../../../application/useCases/room/getRoomByCode');
 const JoinRoomByLinkUseCase = require('../../../application/useCases/room/joinRoomByLink');
@@ -48,6 +48,7 @@ function createRoomHandler({
   joinRoomByLinkUseCase = new JoinRoomByLinkUseCase(),
   roomManager = defaultRoomManager,
   authMiddlewareOptions = {},
+  userRepository = new PgUserRepository(),
 } = {}) {
   return async (request, response) => {
     if (request.method === 'OPTIONS') {
@@ -77,7 +78,7 @@ function createRoomHandler({
       if (request.method === 'POST') {
         let user;
         try {
-          user = authenticateRequest(request, authMiddlewareOptions);
+          user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
         } catch (err) {
           sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
           return;
@@ -170,7 +171,7 @@ function createRoomHandler({
 
       let user;
       try {
-        user = authenticateRequest(request, authMiddlewareOptions);
+        user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
       } catch (err) {
         sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
         return;

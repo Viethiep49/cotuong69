@@ -89,10 +89,13 @@ function querySqlite(text, params = []) {
   }
 
   // Chuyển đổi cú pháp $1, $2 của Postgres sang ? của SQLite kèm map đúng tham số
+  // BE-01: node:sqlite không nhận kiểu boolean -> ép về 0/1
+  const normalizeParam = (value) => (value === true ? 1 : value === false ? 0 : value);
+
   const expandedParams = [];
   let sqliteText = text.replace(/\$(\d+)/g, (match, num) => {
     const index = parseInt(num, 10) - 1;
-    expandedParams.push(params[index]);
+    expandedParams.push(normalizeParam(params[index]));
     return '?';
   });
   // Chuyển đổi một số cú pháp DDL đặc thù nếu có
@@ -102,7 +105,8 @@ function querySqlite(text, params = []) {
     .replace(/BOOLEAN/gi, 'INTEGER');
 
   try {
-    const isSelect = /^\s*(SELECT|PRAGMA)/i.test(sqliteText);
+    // BE-02: UPDATE/INSERT ... RETURNING cũng trả về dòng -> phải dùng all()
+    const isSelect = /^\s*(SELECT|PRAGMA|WITH)/i.test(sqliteText) || /\bRETURNING\b/i.test(sqliteText);
     const stmt = sqliteDb.prepare(sqliteText);
 
     if (isSelect) {
