@@ -42,6 +42,8 @@ class RoomHub {
 
     // Quản lý Timer đếm ngược 60s khi người chơi mất kết nối (COT-593, COT-595)
     this.disconnectTimers = new Map(); // roomCode -> { interval, userId, side }
+    // BE-05: timer đồng hồ lượt đi của từng phòng
+    this.turnTimers = new Map(); // roomCode -> Timeout
     this.heartbeatTimer = null;
 
     this.setupWss();
@@ -66,6 +68,8 @@ class RoomHub {
       if (isReconnectingPlayer) {
         this.clearDisconnectTimer(room.code);
         room.resumeMatchAfterReconnect(userId);
+        // BE-05: tiếp tục đồng hồ sau khi người chơi vào lại
+        this.armTurnTimer(room);
       }
 
       // Thêm người chơi vào phòng logic (nếu chưa có trong phòng)
@@ -241,10 +245,10 @@ class RoomHub {
     });
   }
 
-  handleMessage(socket, rawMessage) {
+  async handleMessage(socket, rawMessage) {
     // SEC-03: bọc toàn bộ xử lý để một payload xấu không làm sập process
     try {
-      this._handleMessage(socket, rawMessage);
+      await this._handleMessage(socket, rawMessage);
     } catch (err) {
       console.error('[WS] Lỗi xử lý tin nhắn:', err);
       this.send(socket, {
@@ -255,7 +259,7 @@ class RoomHub {
     }
   }
 
-  _handleMessage(socket, rawMessage) {
+  async _handleMessage(socket, rawMessage) {
     const meta = this.clients.get(socket);
     if (!meta) return;
 
@@ -346,6 +350,8 @@ class RoomHub {
           startedAt: startResult.startedAt,
           room: room.getSummary(),
         });
+        // BE-05: bắt đầu chạy đồng hồ của lượt đầu tiên
+        this.armTurnTimer(room);
       } catch (err) {
         this.send(socket, { type: 'error', code: err.code || 'START_ERROR', message: err.message });
       }
@@ -384,6 +390,7 @@ class RoomHub {
         return;
       }
 
+      const turnStartedAt = room.matchState.turnStartedAt;
       const moveResult = room.applyMove(playerColor, payload.from, payload.to);
       if (!moveResult.accepted) {
         this.send(socket, {
@@ -394,12 +401,45 @@ class RoomHub {
         return;
       }
 
+      // BE-05: trừ đồng hồ theo MILI-GIÂY (trước đây chỉ hiển thị, không bao giờ trừ)
+      const elapsedMs = Math.max(0, Date.now() - (turnStartedAt || Date.now()));
+      const clocks = room.matchState.remainingClocks;
+      if (clocks && Number.isFinite(Number(clocks[playerColor]))) {
+        clocks[playerColor] = Math.max(0, Number(clocks[playerColor]) - elapsedMs / 1000);
+      }
+
+      // BE-04: chiếu bí / hết nước đi -> kết thúc trận đúng cách qua settleMatch
+      if (moveResult.endReason || room.status === 'FINISHED' || room.matchState.status === 'completed') {
+        await this.settleMatch(room, moveResult.winnerColor || playerColor, moveResult.endReason || 'CHECKMATE');
+        return;
+      }
+
       this.broadcastToRoom(room.code, {
         type: 'moveResult',
         move: { from: payload.from, to: payload.to, color: playerColor, captured: moveResult.captured },
         state: room.getSnapshot(),
         snapshot: room.getSnapshot(),
         accepted: true,
+      });
+      // BE-05: chuyển đồng hồ sang lượt đối thủ
+      this.armTurnTimer(room);
+      return;
+    }
+
+    // BE-05: người chơi chủ động xin thua
+    if (type === 'resign') {
+      if (room.status !== 'PLAYING' || !room.matchState) {
+        this.send(socket, { type: 'error', code: 'GAME_NOT_PLAYING', message: 'Trận đấu chưa bắt đầu hoặc đã kết thúc.' });
+        return;
+      }
+      const mySide = roleInfo.side ? roleInfo.side.toLowerCase() : null;
+      if (!mySide) {
+        this.send(socket, { type: 'error', code: 'FORBIDDEN', message: 'Chỉ người chơi mới được xin thua.' });
+        return;
+      }
+      const opponentSide = mySide === 'red' ? 'black' : 'red';
+      await this.settleMatch(room, opponentSide, 'RESIGN', {
+        message: `Kỳ thủ bên ${mySide === 'red' ? 'Đỏ' : 'Đen'} đã xin thua.`,
       });
       return;
     }
@@ -799,6 +839,7 @@ class RoomHub {
       // 1. Nếu ván đấu đang diễn ra và người ngắt kết nối là Người chơi (PLAYER) (COT-593)
       if (room.status === 'PLAYING' && meta.role === 'PLAYER') {
         const pauseResult = room.pauseMatchForDisconnect(meta.userId, this.reconnectCountdownSeconds);
+        if (pauseResult) this.clearTurnTimer(room.code);
         if (pauseResult) {
           // Bắt đầu bộ đếm 60 giây tại máy chủ (COT-593, COT-595)
           this.startDisconnectTimer(room, meta.userId, meta.side);
@@ -934,6 +975,146 @@ class RoomHub {
   }
 
   /**
+   * BE-04: KẾT THÚC VÁN ĐẤU ở một chỗ duy nhất.
+   * Trước đây Room.applyMove tự set status FINISHED nhưng hub chỉ broadcast moveResult
+   * -> không có matchEnded, không cập nhật Elo, không ghi history, phòng FINISHED
+   * từ chối mọi người vào. Giờ mọi nhánh (chiếu bí, hết nước, hết giờ, xin thua,
+   * mất kết nối) đều đi qua đây và chỉ chạy 1 lần / ván.
+   *
+   * @param {object} room
+   * @param {'red'|'black'|null} winnerColor null = huỷ ván (SYSTEM_ERROR)
+   * @param {'CHECKMATE'|'NO_LEGAL_MOVES'|'TIMEOUT'|'RESIGN'|'DISCONNECT_TIMEOUT'|'SYSTEM_ERROR'} endReason
+   * @param {{message?: string, skipElo?: boolean}} [options]
+   */
+  async settleMatch(room, winnerColor, endReason, options = {}) {
+    if (!room || !room.matchState) return null;
+
+    // Idempotent: 1 ván chỉ chốt 1 lần dù nhiều sự kiện cùng lúc
+    if (room.matchState.status === 'completed' && room.settledMatchId === room.matchId) {
+      return room.lastSettlement || null;
+    }
+
+    const winnerUser = winnerColor ? room.players[winnerColor] : null;
+    const loserColor = winnerColor === 'red' ? 'black' : winnerColor === 'black' ? 'red' : null;
+    const loserUser = loserColor ? room.players[loserColor] : null;
+
+    room.matchState.status = 'completed';
+    room.matchState.winner = winnerColor || null;
+    room.matchState.endReason = endReason;
+    room.matchState.isPaused = false;
+    room.status = 'WAITING_OPPONENT';
+    room.reconnectState = null;
+    this.clearDisconnectTimer(room.code);
+    this.clearTurnTimer(room.code);
+
+    let winnerElo = { change: 0, newRating: winnerUser?.eloRating ?? 1000 };
+    let loserElo = { change: 0, newRating: loserUser?.eloRating ?? 1000 };
+
+    if (winnerUser && loserUser && !options.skipElo) {
+      try {
+        const elo = await this.applyEloForResult(winnerUser, loserUser);
+        winnerElo = elo.winner;
+        loserElo = elo.loser;
+        winnerUser.eloRating = winnerElo.newRating;
+        loserUser.eloRating = loserElo.newRating;
+      } catch (err) {
+        console.error('Lỗi khi cập nhật Elo vào database:', err);
+      }
+    }
+
+    const record = {
+      matchId: room.matchId,
+      roomCode: room.code,
+      winnerUserId: winnerUser ? winnerUser.id : null,
+      loserUserId: loserUser ? loserUser.id : null,
+      winner: winnerColor || null,
+      endReason,
+      winnerEloChange: winnerElo.change,
+      loserEloChange: loserElo.change,
+      finishedAt: new Date(),
+    };
+    if (!room.history) room.history = [];
+    room.history.push(record);
+
+    room.readyStates.clear();
+    room.settledMatchId = room.matchId;
+    room.lastSettlement = record;
+
+    const defaultMessage = winnerColor
+      ? `Kỳ thủ bên ${winnerColor === 'red' ? 'Đỏ' : 'Đen'} giành chiến thắng (${endReason}).`
+      : 'Trận đấu đã bị huỷ.';
+
+    this.broadcastToRoom(room.code, {
+      type: 'matchEnded',
+      matchId: room.matchId,
+      // `winner` giữ đúng ngữ nghĩa cũ (màu thắng) để client hiện có không vỡ
+      winner: winnerColor || null,
+      winnerUserId: winnerUser ? winnerUser.id : null,
+      loserUserId: loserUser ? loserUser.id : null,
+      winnerColor: winnerColor || null,
+      winnerSide: winnerColor ? winnerColor.toUpperCase() : null,
+      reason: endReason,
+      endReason,
+      winnerEloChange: winnerElo.change,
+      loserEloChange: loserElo.change,
+      winnerNewElo: winnerElo.newRating,
+      loserNewElo: loserElo.newRating,
+      elo: { winner: winnerElo, loser: loserElo },
+      message: options.message || defaultMessage,
+      room: room.getSummary(),
+    });
+
+    return record;
+  }
+
+  /**
+   * BE-05: chạy đồng hồ của lượt hiện tại ở server. Hết giờ -> xử thua.
+   */
+  armTurnTimer(room) {
+    if (!room) return;
+    this.clearTurnTimer(room.code);
+
+    if (room.status !== 'PLAYING' || !room.matchState) return;
+    if (room.matchState.isPaused || room.reconnectState) return;
+
+    const color = room.matchState.currentTurn;
+    if (color !== 'red' && color !== 'black') return;
+
+    const remainingSeconds = typeof room.getRemainingTurnSeconds === 'function'
+      ? room.getRemainingTurnSeconds()
+      : room.matchState.turnRemainingSeconds;
+
+    const timeoutMs = Math.max(0, Math.round(Number(remainingSeconds) * 1000)) + 50;
+    const opponentColor = color === 'red' ? 'black' : 'red';
+    const matchId = room.matchId;
+
+    const timer = setTimeout(() => {
+      this.turnTimers.delete(room.code);
+      if (!room.matchState || room.matchId !== matchId) return;
+      if (room.status !== 'PLAYING' || room.matchState.isPaused) return;
+      if (room.matchState.currentTurn !== color) return;
+
+      const clocks = room.matchState.remainingClocks;
+      if (clocks) clocks[color] = 0;
+
+      this.settleMatch(room, opponentColor, 'TIMEOUT', {
+        message: `Kỳ thủ bên ${color === 'red' ? 'Đỏ' : 'Đen'} hết thời gian suy nghĩ.`,
+      }).catch((err) => console.error('[settleMatch] timeout:', err));
+    }, timeoutMs);
+
+    if (typeof timer.unref === 'function') timer.unref();
+    this.turnTimers.set(room.code, timer);
+  }
+
+  clearTurnTimer(roomCode) {
+    const timer = this.turnTimers.get(roomCode);
+    if (timer) {
+      clearTimeout(timer);
+      this.turnTimers.delete(roomCode);
+    }
+  }
+
+  /**
    * BE-03: tính Elo từ rating thật trong DB và chỉ cộng/trừ DELTA cho cả 2 người
    * trong 1 transaction. Không có DB thì fallback tính theo dữ liệu trong RAM.
    * @returns {Promise<{winner: object, loser: object}>}
@@ -1038,55 +1219,14 @@ class RoomHub {
     room.reconnectState = null;
     this.clearDisconnectTimer(room.code);
 
-    // BE-03: đọc Elo THẬT từ DB và cộng DELTA (trước đây ghi đè tuyệt đối từ giá trị
-    // 1000 mặc định trong RAM -> người 1650 Elo thua bị tụt còn ~984)
-    let winnerEloResult = { change: 0, newRating: winningUser?.eloRating ?? 1000 };
-    let loserEloResult = { change: 0, newRating: losingUser?.eloRating ?? 1000 };
-
-    if (winningUser && losingUser) {
-      try {
-        const elo = await this.applyEloForResult(winningUser, losingUser);
-        winnerEloResult = elo.winner;
-        loserEloResult = elo.loser;
-        winningUser.eloRating = winnerEloResult.newRating;
-        losingUser.eloRating = loserEloResult.newRating;
-      } catch (err) {
-        console.error('Lỗi khi cập nhật Elo vào database:', err);
-      }
+    // BE-04: dùng chung settleMatch (Elo delta + history + matchEnded + clear readyStates)
+    try {
+      await this.settleMatch(room, winnerColor, 'DISCONNECT_TIMEOUT', {
+        message: `Kỳ thủ bên ${winningSide === 'RED' ? 'Đỏ' : 'Đen'} thắng do đối thủ mất kết nối quá thời gian quy định (60 giây).`,
+      });
+    } catch (err) {
+      console.error('[settleMatch] disconnect:', err);
     }
-
-    // Lưu ván đấu vào lịch sử phòng
-    if (!room.history) room.history = [];
-    const historyRecord = {
-      matchId: room.matchId,
-      roomCode: room.code,
-      winnerUserId: winningUser ? winningUser.id : null,
-      loserUserId: losingUser ? losingUser.id : null,
-      winner: winnerColor,
-      endReason: 'DISCONNECT_TIMEOUT',
-      winnerEloChange: winnerEloResult.change,
-      loserEloChange: loserEloResult.change,
-      finishedAt: new Date(),
-    };
-    room.history.push(historyRecord);
-
-    // Phát thông báo kết thúc trận đấu tới đối thủ và khán giả
-    const resultMessage = `Kỳ thủ bên ${winningSide === 'RED' ? 'Đỏ' : 'Đen'} Thắng do đối thủ mất kết nối quá thời gian quy định (60 giây).`;
-    this.broadcastToRoom(room.code, {
-      type: 'matchEnded',
-      winner: winnerColor,
-      winnerColor,
-      reason: 'DISCONNECT_TIMEOUT',
-      endReason: 'DISCONNECT_TIMEOUT',
-      winnerUserId: winningUser ? winningUser.id : null,
-      loserUserId: losingUser ? losingUser.id : null,
-      winnerEloChange: winnerEloResult.change,
-      loserEloChange: loserEloResult.change,
-      winnerNewElo: winnerEloResult.newRating,
-      loserNewElo: loserEloResult.newRating,
-      message: resultMessage,
-      room: room.getSummary(),
-    });
 
     // Chuyển phòng sang trạng thái Đang chờ trận mới, chuyển quyền Chủ phòng nếu người mất mạng là Host
     room.readyStates.clear();
@@ -1179,6 +1319,10 @@ class RoomHub {
   }
 
   close() {
+    if (this.turnTimers) {
+      for (const timer of this.turnTimers.values()) clearTimeout(timer);
+      this.turnTimers.clear();
+    }
     this.stopHeartbeat();
     for (const [code] of Array.from(this.disconnectTimers.entries())) {
       this.clearDisconnectTimer(code);

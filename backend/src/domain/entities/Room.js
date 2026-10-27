@@ -412,11 +412,14 @@ class Room {
     this.matchState.inCheck = inCheck;
     this.matchState.checkedColor = inCheck ? nextTurn : null;
 
+    // BE-04: phân biệt CHIẾU BÍ và HẾT NƯỚC ĐI (trước đây luôn ghi 'CHECKMATE')
+    let endReason = null;
     if (!hasLegalMove(this.matchState.board, nextTurn)) {
+      endReason = inCheck ? 'CHECKMATE' : 'NO_LEGAL_MOVES';
       this.matchState.status = 'completed';
       this.status = 'FINISHED';
       this.matchState.winner = color;
-      this.matchState.endReason = 'CHECKMATE';
+      this.matchState.endReason = endReason;
     }
 
     return {
@@ -424,6 +427,8 @@ class Room {
       captured: Boolean(capturedPiece),
       capturedPiece,
       inCheck,
+      endReason,
+      winnerColor: endReason ? color : null,
     };
   }
 

@@ -66,8 +66,10 @@ function createCot615Match(startedAt = Date.now()) {
 }
 
 function getPublicMatchState(match, now = Date.now()) {
+  checkClockTimeout(match, now);
   const startsAt = Date.parse(match.startsAt);
   const remainingCountdown = Math.max(0, Math.ceil((startsAt - now) / 1000));
+  // Hiển thị làm tròn xuống giây (đồng hồ cho người chơi); việc trừ giờ khi đi quân tính theo ms
   const elapsedSeconds = Math.max(0, Math.floor((now - match.turnStartedAt) / 1000));
   const isActive = remainingCountdown === 0;
   const activePlayer = isActive && match.status !== 'completed' ? match.currentTurn : null;
@@ -95,17 +97,46 @@ function getPublicMatchState(match, now = Date.now()) {
   };
 }
 
+/**
+ * BE-05: server tự xử thua khi hết giờ (trước đây chỉ từ chối nước đi, ván treo).
+ * @returns {string} status sau khi kiểm tra
+ */
+function checkClockTimeout(match, now = Date.now()) {
+  if (!match || match.status === 'completed') return match ? match.status : 'completed';
+  if (now < Date.parse(match.startsAt)) return match.status;
+
+  const color = match.currentTurn;
+  if (color !== 'red' && color !== 'black') return match.status;
+
+  const elapsedMs = Math.max(0, now - match.turnStartedAt);
+  const remaining = Math.max(0, Number(match.remainingClocks[color] || 0) - elapsedMs / 1000);
+  if (remaining <= 0) {
+    match.remainingClocks[color] = 0;
+    match.status = 'completed';
+    match.winner = color === 'red' ? 'black' : 'red';
+    match.endReason = 'TIMEOUT';
+    match.finishedAt = new Date(now).toISOString();
+  }
+  return match.status;
+}
+
 function applyMatchMove(match, color, from, to, now = Date.now()) {
-  if (match.status === 'completed' || now < Date.parse(match.startsAt)) {
+  checkClockTimeout(match, now);
+  if (match.status === 'completed') {
+    return { accepted: false, error: 'Trận đấu đã kết thúc.' };
+  }
+  if (now < Date.parse(match.startsAt)) {
     return { accepted: false, error: 'Trận đấu chưa bắt đầu.' };
   }
   if (color !== match.currentTurn) {
     return { accepted: false, error: 'Chưa tới lượt của bạn.' };
   }
 
-  const elapsedSeconds = Math.max(0, Math.floor((now - match.turnStartedAt) / 1000));
-  const remaining = Math.max(0, match.remainingClocks[color] - elapsedSeconds);
-  if (remaining === 0) {
+  // BE-05: trừ đồng hồ theo MILI-GIÂY (trước đây làm tròn xuống giây -> đi nhanh không mất giờ)
+  const elapsedMs = Math.max(0, now - match.turnStartedAt);
+  const remaining = Math.max(0, Number(match.remainingClocks[color]) - elapsedMs / 1000);
+  if (remaining <= 0) {
+    checkClockTimeout(match, now);
     return { accepted: false, error: 'Đồng hồ của bạn đã hết giờ.' };
   }
 
@@ -151,4 +182,5 @@ function createInitialArmy() {
   ];
 }
 
-module.exports = { applyMatchMove, createCot615Match, getPublicMatchState, createArmy, createInitialArmy };
+module.exports = {
+  checkClockTimeout, applyMatchMove, createCot615Match, getPublicMatchState, createArmy, createInitialArmy };
