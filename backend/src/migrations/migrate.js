@@ -22,13 +22,18 @@ function isPostgres() {
  */
 function splitStatements(sqlContent) {
   return sqlContent
-    .replace(/--.*$/gm, '')
-    // SQLite không hỗ trợ ADD COLUMN IF NOT EXISTS -> bỏ mệnh đề này
-    .replace(/ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS/gi, 'ADD COLUMN')
-    .replace(/CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS/gi, 'CREATE INDEX')
+    // Tách TRƯỚC khi xoá comment để còn thấy marker "pg-only"
     .split(';')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0)
+    // BE-18: câu lệnh chỉ dành cho PostgreSQL được đánh dấu "pg-only"
+    .filter((statement) => !/\bpg-only\b/i.test(statement))
+    .map((statement) => statement.replace(/--.*$/gm, '').trim())
+    .filter((statement) => statement.length > 0)
+    // SQLite không hỗ trợ ADD COLUMN IF NOT EXISTS / CREATE INDEX IF NOT EXISTS
+    .map((statement) => statement
+      .replace(/ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS/gi, 'ADD COLUMN')
+      .replace(/CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS/gi, 'CREATE INDEX'));
 }
 
 /**

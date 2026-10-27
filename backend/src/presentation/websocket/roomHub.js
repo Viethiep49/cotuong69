@@ -4,6 +4,7 @@ const { WebSocketServer } = require('ws');
 const { verifyAccessToken } = require('../../application/services/tokenService');
 const { safeDecode } = require('../../core/safeDecode');
 const { onlineUserManager: defaultOnlineUserManager } = require('../../infrastructure/database/repositories/OnlineUserManager');
+const PgPvpMatchRepository = require('../../infrastructure/database/repositories/PgPvpMatchRepository');
 const { roomManager: defaultRoomManager } = require('../../infrastructure/database/repositories/RoomManager');
 
 /**
@@ -43,6 +44,7 @@ class RoomHub {
     heartbeatTimeoutMs = 10000,
     reconnectCountdownSeconds = 60,
     onlineUserManager = defaultOnlineUserManager,
+    pvpMatchRepository = null,
     enableHeartbeat = true,
   } = {}) {
     this.roomManager = roomManager;
@@ -50,6 +52,7 @@ class RoomHub {
     this.userRepository = userRepository;
     // BE-09: chia sẻ singleton với friends routes để trạng thái online có tác dụng
     this.onlineUserManager = onlineUserManager;
+    this.pvpMatchRepository = pvpMatchRepository;
     if (!this.userRepository) {
       try {
         const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
@@ -1178,6 +1181,15 @@ class RoomHub {
     };
     if (!room.history) room.history = [];
     room.history.push(record);
+
+    // BE-18: lưu kết quả vào DB (best-effort, không làm hỏng luồng kết thúc trận)
+    if (this.pvpMatchRepository && typeof this.pvpMatchRepository.create === 'function') {
+      try {
+        await this.pvpMatchRepository.create(record);
+      } catch (err) {
+        console.error('[pvp_matches] không lưu được kết quả:', err.message);
+      }
+    }
 
     room.readyStates.clear();
     room.settledMatchId = room.matchId;
