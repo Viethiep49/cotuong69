@@ -2,6 +2,20 @@ const { comparePassword } = require('../services/passwordService');
 const { generateAccessToken } = require('../services/tokenService');
 const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
 
+/**
+ * BE-16: chỉ chấp nhận đường dẫn nội bộ ("/room/123"), chặn open-redirect
+ * ("//evil.com", "https://evil.com").
+ * @param {string} redirectUrl
+ * @returns {string|null}
+ */
+function sanitizeRedirectUrl(redirectUrl) {
+  if (!redirectUrl || typeof redirectUrl !== 'string') return null;
+  const trimmed = redirectUrl.trim();
+  if (!trimmed) return null;
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) return null;
+  return trimmed;
+}
+
 // BE-13: hash giả dùng cho nhánh "user không tồn tại" (sinh 1 lần, lazy)
 let dummyHashPromise = null;
 function getDummyHash() {
@@ -97,7 +111,7 @@ class LoginUserUseCase {
         status: user.status,
       },
       // Giữ thông tin đích cần quay lại nếu người dùng mở link mời Room trước khi đăng nhập
-      redirectUrl: redirectUrl && typeof redirectUrl === 'string' ? redirectUrl.trim() : null,
+      redirectUrl: sanitizeRedirectUrl(redirectUrl),
     };
   }
 }

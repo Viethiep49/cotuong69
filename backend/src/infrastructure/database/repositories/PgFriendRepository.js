@@ -22,7 +22,7 @@ class PgFriendRepository {
     if (!userId) return [];
     const uid = Number(userId);
     const res = await this.db.query(
-      `SELECT u.id, u.username, u.display_name, u.email, u.elo_rating, u.avatar_url, u.status
+      `SELECT u.id, u.username, u.display_name, u.elo_rating, u.avatar_url, u.status
        FROM friends f
        JOIN users u ON (u.id = CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END)
        WHERE (f.user_id = $1 OR f.friend_id = $1)
@@ -35,7 +35,6 @@ class PgFriendRepository {
       id: Number(row.id),
       username: row.username,
       displayName: row.display_name,
-      email: row.email,
       eloRating: Number(row.elo_rating ?? 1000),
       avatarUrl: row.avatar_url || null,
       status: row.status,

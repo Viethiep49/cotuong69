@@ -13,9 +13,17 @@ function validateDisplayName(displayName) {
     return { isValid: false, error: 'Tên hiển thị phải có độ dài từ 2 đến 50 ký tự.' };
   }
 
-  const lower = trimmed.toLowerCase();
+  // BE-16: loại bỏ ký tự điều khiển (bao gồm xuống dòng, tab, NUL...)
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) {
+    return { isValid: false, error: 'Tên hiển thị không được chứa ký tự điều khiển.' };
+  }
+
+  // BE-16: so khớp từ cấm theo RANH GIỚI TỪ (dấu "_" cũng là phân cách),
+  // không theo chuỗi con -> "vl" không còn chặn nhầm "Vladimir",
+  // nhưng "hacker_cotuong" vẫn bị chặn.
   for (const word of BANNED_WORDS) {
-    if (lower.includes(word)) {
+    const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${word}($|[^\\p{L}\\p{N}])`, 'iu');
+    if (pattern.test(trimmed)) {
       return { isValid: false, error: 'Tên hiển thị chứa từ ngữ không phù hợp hoặc bị cấm.' };
     }
   }

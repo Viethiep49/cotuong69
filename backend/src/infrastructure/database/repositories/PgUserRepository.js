@@ -31,7 +31,7 @@ class PgUserRepository {
     if (!username) return null;
     const res = await this.db.query(
       `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at, password_changed_at
-       FROM users WHERE username = $1 LIMIT 1`,
+       FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1`,
       [username.trim()]
     );
     return res.rows.length > 0 ? toUser(res.rows[0]) : null;
