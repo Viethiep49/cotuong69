@@ -28,8 +28,8 @@ class PgPasswordResetRepository {
    */
   async invalidateOldTokens(userId) {
     await this.db.query(
-      `UPDATE password_reset_tokens SET is_used = 1
-       WHERE user_id = $1 AND is_used = 0`,
+      `UPDATE password_reset_tokens SET is_used = TRUE
+       WHERE user_id = $1 AND is_used = FALSE`,
       [Number(userId)]
     );
   }
@@ -42,7 +42,7 @@ class PgPasswordResetRepository {
     await this.db.query(
       `INSERT INTO password_reset_tokens (token, user_id, expires_at, is_used)
        VALUES ($1, $2, $3, $4)`,
-      [token, Number(userId), expIso, 0]
+      [token, Number(userId), expIso, false]
     );
     const res = await this.db.query(
       `SELECT id, token, user_id, expires_at, is_used, created_at
@@ -60,7 +60,7 @@ class PgPasswordResetRepository {
     await this.db.query(
       `INSERT INTO otp_codes (email, code, type, expires_at, is_used)
        VALUES ($1, $2, $3, $4, $5)`,
-      [email.trim().toLowerCase(), code, type, expIso, 0]
+      [email.trim().toLowerCase(), code, type, expIso, false]
     );
   }
 
@@ -81,7 +81,7 @@ class PgPasswordResetRepository {
    */
   async markTokenUsed(token) {
     await this.db.query(
-      `UPDATE password_reset_tokens SET is_used = 1 WHERE token = $1`,
+      `UPDATE password_reset_tokens SET is_used = TRUE WHERE token = $1`,
       [token]
     );
   }
