@@ -1,4 +1,5 @@
 const { URL } = require('node:url');
+const { sendError } = require('../utils/errorResponse');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
 const UpdateProfileUseCase = require('../../../application/useCases/updateProfile');
 const UploadAvatarUseCase = require('../../../application/useCases/uploadAvatar');
@@ -154,7 +155,7 @@ function createUserHandler({
       try {
         user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
       } catch (err) {
-        sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 401 });
         return;
       }
 
@@ -170,7 +171,7 @@ function createUserHandler({
         const result = await updateProfileUseCase.execute(user.id, payload);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
@@ -186,7 +187,7 @@ function createUserHandler({
       try {
         user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
       } catch (err) {
-        sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 401 });
         return;
       }
 
@@ -195,7 +196,7 @@ function createUserHandler({
       try {
         rawBuffer = await parseRawBody(request);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
         return;
       }
 
@@ -211,7 +212,7 @@ function createUserHandler({
         const result = await uploadAvatarUseCase.execute(user.id, fileData);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }

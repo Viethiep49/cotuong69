@@ -1,4 +1,5 @@
 const { URL } = require('node:url');
+const { sendError } = require('../utils/errorResponse');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 const { safeDecode } = require('../../../core/safeDecode');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
@@ -72,7 +73,7 @@ function createFriendsHandler({
     try {
       user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
     } catch (err) {
-      sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
+      sendError(response, sendJson, err, { defaultStatus: 401 });
       return;
     }
 
@@ -87,7 +88,7 @@ function createFriendsHandler({
         const result = await getOnlineFriendsUseCase.execute(user.id);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
@@ -111,7 +112,7 @@ function createFriendsHandler({
         const result = await sendDirectInvitationUseCase.execute(user.id, payload);
         sendJson(response, 201, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
@@ -157,7 +158,7 @@ function createFriendsHandler({
         const result = await respondDirectInvitationUseCase.execute(user.id, invitationId, payload);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
@@ -179,7 +180,7 @@ function createFriendsHandler({
         const result = cancelDirectInvitationUseCase.execute(user.id, invitationId);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }

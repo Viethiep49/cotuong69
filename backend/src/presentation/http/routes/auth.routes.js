@@ -1,4 +1,5 @@
 const { URL } = require('node:url');
+const { sendError } = require('../utils/errorResponse');
 const RegisterUserUseCase = require('../../../application/useCases/registerUser');
 const LoginUserUseCase = require('../../../application/useCases/loginUser');
 const ForgotPasswordUseCase = require('../../../application/useCases/forgotPassword');
@@ -248,7 +249,7 @@ function createAuthHandler({
         });
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
@@ -279,10 +280,7 @@ function createAuthHandler({
           },
         });
       } catch (err) {
-        sendJson(response, err.statusCode || 401, {
-          error: err.message,
-          code: err.code || 'UNAUTHORIZED',
-        });
+        sendError(response, sendJson, err, { defaultStatus: 401 });
       }
       return;
     }

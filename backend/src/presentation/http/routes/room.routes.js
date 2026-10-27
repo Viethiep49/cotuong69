@@ -1,4 +1,5 @@
 const { URL } = require('node:url');
+const { sendError } = require('../utils/errorResponse');
 const { safeDecode } = require('../../../core/safeDecode');
 const { enforce, getClientIp, roomLookupLimiter } = require('../middlewares/rateLimiter');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
@@ -81,7 +82,7 @@ function createRoomHandler({
         try {
           user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
         } catch (err) {
-          sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
+          sendError(response, sendJson, err, { defaultStatus: 401 });
           return;
         }
 
@@ -97,7 +98,7 @@ function createRoomHandler({
           const result = await createRoomUseCase.execute(user.id, body);
           sendJson(response, 201, result);
         } catch (err) {
-          sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+          sendError(response, sendJson, err, { defaultStatus: 400 });
         }
         return;
       }
@@ -134,7 +135,7 @@ function createRoomHandler({
         const result = getRoomByCodeUseCase.execute(code);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 404, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 404 });
       }
       return;
     }
@@ -163,7 +164,7 @@ function createRoomHandler({
           spectatorCount: result.room.spectatorCount,
         });
       } catch (err) {
-        sendJson(response, err.statusCode || 404, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 404 });
       }
       return;
     }
@@ -185,7 +186,7 @@ function createRoomHandler({
       try {
         user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
       } catch (err) {
-        sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 401 });
         return;
       }
 
@@ -193,7 +194,7 @@ function createRoomHandler({
         const result = await joinRoomByLinkUseCase.execute(user.id, code);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
