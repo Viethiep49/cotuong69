@@ -40,7 +40,7 @@ function parseJsonBody(request) {
   });
 }
 
-function parseRawBody(request, limitBytes = 3 * 1024 * 1024) {
+function parseRawBody(request, limitBytes = 2 * 1024 * 1024 + 64 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let totalLength = 0;
