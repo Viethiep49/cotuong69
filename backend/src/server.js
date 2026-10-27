@@ -15,6 +15,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { assertJwtSecretConfigured } = require('./application/services/tokenService');
 
+// SEC-03: không để một promise bị reject làm chết cả server
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+
 function createServer(options = {}) {
   let match = options.match || null;
   const now = options.now || (() => Date.now());
@@ -34,7 +39,7 @@ function createServer(options = {}) {
   const roomHandler = options.roomHandler || createRoomHandler(options.roomOptions);
   const friendsHandler = options.friendsHandler || createFriendsHandler(options.friendsOptions);
 
-  const httpHandler = (req, res) => {
+  const routeRequest = (req, res) => {
     let pathname = '';
     try {
       pathname = new URL(req.url, 'http://localhost').pathname;
@@ -57,20 +62,76 @@ function createServer(options = {}) {
       return friendsHandler(req, res);
     }
     if (pathname.startsWith('/uploads/')) {
-      const filePath = path.resolve(__dirname, '..', pathname.replace(/^\//, ''));
-      if (fs.existsSync(filePath)) {
-        const ext = path.extname(filePath).toLowerCase();
-        const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
-        res.writeHead(200, { 'Content-Type': mimeMap[ext] || 'application/octet-stream' });
-        fs.createReadStream(filePath).pipe(res);
-        return;
-      } else {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'File not found' }));
-        return;
-      }
+      return serveUpload(pathname, res);
     }
     return matchesHandler(req, res);
+  };
+
+  // SEC-03: chỉ phục vụ file thật nằm trong thư mục uploads, chặn path traversal/EISDIR
+  const uploadRoot = path.resolve(__dirname, '..', 'uploads');
+  function serveUpload(pathname, res) {
+    let relativePath;
+    try {
+      relativePath = decodeURIComponent(pathname.slice('/uploads/'.length));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
+      res.end(JSON.stringify({ error: 'Đường dẫn tệp không hợp lệ.' }));
+      return;
+    }
+
+    if (!relativePath || relativePath.includes('\0')) {
+      res.writeHead(400, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
+      res.end(JSON.stringify({ error: 'Đường dẫn tệp không hợp lệ.' }));
+      return;
+    }
+
+    const filePath = path.resolve(uploadRoot, relativePath);
+    const insideRoot = filePath === uploadRoot || filePath.startsWith(uploadRoot + path.sep);
+    if (!insideRoot) {
+      res.writeHead(403, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
+      res.end(JSON.stringify({ error: 'Truy cập bị từ chối.' }));
+      return;
+    }
+
+    const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
+    fs.stat(filePath, (err, stats) => {
+      if (err || !stats.isFile()) {
+        res.writeHead(404, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
+        res.end(JSON.stringify({ error: 'Không tìm thấy tệp.' }));
+        return;
+      }
+
+      const ext = path.extname(filePath).toLowerCase();
+      res.writeHead(200, {
+        'Content-Type': mimeMap[ext] || 'application/octet-stream',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      const stream = fs.createReadStream(filePath);
+      stream.on('error', () => res.destroy());
+      stream.pipe(res);
+    });
+  }
+
+  function handleHttpError(err, res) {
+    console.error('[HTTP]', err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+    }
+    if (!res.writableEnded) {
+      res.end(JSON.stringify({ success: false, code: 'INTERNAL_ERROR' }));
+    }
+  }
+
+  // SEC-03: mọi handler bất đồng bộ đều được bọc, một request xấu không kill process
+  const httpHandler = (req, res) => {
+    try {
+      const result = routeRequest(req, res);
+      if (result && typeof result.catch === 'function') {
+        result.catch((err) => handleHttpError(err, res));
+      }
+    } catch (err) {
+      handleHttpError(err, res);
+    }
   };
 
   const server = http.createServer(httpHandler);
@@ -164,7 +225,22 @@ function createServer(options = {}) {
       state: getPublicMatchState(getCurrentMatch(), now()),
     });
     broadcastState();
-    client.on('message', (message) => handleMessage(client, message));
+    client.on('error', (err) => {
+      console.warn('[WS] Lỗi socket match:', err && err.message);
+      try {
+        client.terminate();
+      } catch {
+        /* ignore */
+      }
+    });
+    client.on('message', (message) => {
+      try {
+        handleMessage(client, message);
+      } catch (err) {
+        console.error('[WS] Lỗi xử lý tin nhắn match:', err);
+        send(client, { type: 'error', error: 'Không xử lý được tin nhắn.' });
+      }
+    });
     client.on('close', () => {
       clients.delete(client);
       broadcastState();

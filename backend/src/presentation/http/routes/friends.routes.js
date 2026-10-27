@@ -1,4 +1,5 @@
 const { URL } = require('node:url');
+const { safeDecode } = require('../../../core/safeDecode');
 const { authenticateRequest } = require('../middlewares/authMiddleware');
 const GetOnlineFriendsUseCase = require('../../../application/useCases/friends/getOnlineFriends');
 const SendDirectInvitationUseCase = require('../../../application/useCases/friends/sendDirectInvitation');
@@ -137,7 +138,11 @@ function createFriendsHandler({
         return;
       }
 
-      const invitationId = decodeURIComponent(respondMatch[1]);
+      const invitationId = safeDecode(respondMatch[1]);
+      if (invitationId === null) {
+        sendJson(response, 400, { error: 'Mã lời mời không hợp lệ.', code: 'INVALID_INVITATION_ID' });
+        return;
+      }
       let payload;
       try {
         payload = await parseJsonBody(request);
@@ -163,7 +168,11 @@ function createFriendsHandler({
         return;
       }
 
-      const invitationId = decodeURIComponent(cancelMatch[1]);
+      const invitationId = safeDecode(cancelMatch[1]);
+      if (invitationId === null) {
+        sendJson(response, 400, { error: 'Mã lời mời không hợp lệ.', code: 'INVALID_INVITATION_ID' });
+        return;
+      }
       try {
         const result = cancelDirectInvitationUseCase.execute(user.id, invitationId);
         sendJson(response, 200, result);

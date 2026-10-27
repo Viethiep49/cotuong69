@@ -1,7 +1,8 @@
 const FILES = 'abcdefghi';
 
 function parsePosition(position) {
-  if (typeof position !== 'string' || !/^[a-i][0-9]$/i.test(position)) {
+  // SEC-03: chỉ chấp nhận chữ thường ('e3'); toạ độ in hoa trước đây lọt qua rồi gây lỗi
+  if (typeof position !== 'string' || !/^[a-i][0-9]$/.test(position)) {
     return null;
   }
   return { file: FILES.indexOf(position[0].toLowerCase()), rank: Number(position[1]) };

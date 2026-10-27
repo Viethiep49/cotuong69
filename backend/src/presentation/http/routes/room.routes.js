@@ -1,4 +1,5 @@
 const { URL } = require('node:url');
+const { safeDecode } = require('../../../core/safeDecode');
 const { authenticateRequest } = require('../middlewares/authMiddleware');
 const CreateRoomUseCase = require('../../../application/useCases/room/createRoom');
 const GetRoomByCodeUseCase = require('../../../application/useCases/room/getRoomByCode');
@@ -106,7 +107,11 @@ function createRoomHandler({
     // 3. Kiểm tra thông tin phòng qua mã / deep link (GET /api/rooms/:code) - COT-589
     const roomCodeMatch = pathname.match(/^\/api\/rooms\/([^/]+)$/);
     if (roomCodeMatch) {
-      const code = decodeURIComponent(roomCodeMatch[1]);
+      const code = safeDecode(roomCodeMatch[1]);
+      if (code === null) {
+        sendJson(response, 400, { error: 'Mã phòng không hợp lệ.', code: 'INVALID_ROOM_CODE' });
+        return;
+      }
       if (request.method !== 'GET') {
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận GET.' });
         return;
@@ -124,7 +129,11 @@ function createRoomHandler({
     // 4. Lấy deep link mời (GET /api/rooms/:code/invitation) - COT-589
     const inviteMatch = pathname.match(/^\/api\/rooms\/([^/]+)\/invitation$/);
     if (inviteMatch) {
-      const code = decodeURIComponent(inviteMatch[1]);
+      const code = safeDecode(inviteMatch[1]);
+      if (code === null) {
+        sendJson(response, 400, { error: 'Mã phòng không hợp lệ.', code: 'INVALID_ROOM_CODE' });
+        return;
+      }
       if (request.method !== 'GET') {
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận GET.' });
         return;
@@ -149,7 +158,11 @@ function createRoomHandler({
     // 5. Tham gia phòng qua link và phân vai trò Player/Spectator (POST /api/rooms/:code/join) - COT-589
     const joinMatch = pathname.match(/^\/api\/rooms\/([^/]+)\/join$/);
     if (joinMatch) {
-      const code = decodeURIComponent(joinMatch[1]);
+      const code = safeDecode(joinMatch[1]);
+      if (code === null) {
+        sendJson(response, 400, { error: 'Mã phòng không hợp lệ.', code: 'INVALID_ROOM_CODE' });
+        return;
+      }
       if (request.method !== 'POST') {
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận POST.' });
         return;

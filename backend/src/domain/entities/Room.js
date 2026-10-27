@@ -376,12 +376,20 @@ class Room {
       return { accepted: false, error: 'Chưa tới lượt của bạn.' };
     }
 
+    // SEC-03: chặn toạ độ sai kiểu trước khi sinh nước đi
+    if (typeof from !== 'string' || typeof to !== 'string') {
+      return { accepted: false, error: 'Toạ độ nước đi không hợp lệ.' };
+    }
+
     const { getLegalMoveError, hasLegalMove, isInCheck } = require('./xiangqiRules');
     const error = getLegalMoveError(this.matchState.board, color, from, to);
     if (error) return { accepted: false, error };
 
     const capturedPiece = this.matchState.board.find((p) => p.position === to);
     const movingPiece = this.matchState.board.find((p) => p.position === from);
+    if (!movingPiece) {
+      return { accepted: false, error: 'Không tìm thấy quân cờ ở vị trí xuất phát.' };
+    }
 
     this.matchState.board = this.matchState.board
       .filter((p) => p.position !== to && p.id !== movingPiece.id)

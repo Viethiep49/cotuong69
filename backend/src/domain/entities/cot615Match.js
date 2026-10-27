@@ -109,11 +109,19 @@ function applyMatchMove(match, color, from, to, now = Date.now()) {
     return { accepted: false, error: 'Đồng hồ của bạn đã hết giờ.' };
   }
 
+  // SEC-03: chặn toạ độ sai kiểu trước khi sinh nước đi
+  if (typeof from !== 'string' || typeof to !== 'string') {
+    return { accepted: false, error: 'Toạ độ nước đi không hợp lệ.' };
+  }
+
   const error = getLegalMoveError(match.board, color, from, to);
   if (error) return { accepted: false, error };
 
   const capturedPiece = match.board.find((piece) => piece.position === to);
   const movingPiece = match.board.find((piece) => piece.position === from);
+  if (!movingPiece) {
+    return { accepted: false, error: 'Không tìm thấy quân cờ ở vị trí xuất phát.' };
+  }
   match.board = match.board
     .filter((piece) => piece.position !== to && piece.id !== movingPiece.id)
     .concat({ ...movingPiece, position: to });

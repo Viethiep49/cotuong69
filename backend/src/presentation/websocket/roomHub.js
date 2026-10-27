@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const { URL } = require('node:url');
 const { WebSocketServer } = require('ws');
 const { verifyAccessToken } = require('../../application/services/tokenService');
+const { safeDecode } = require('../../core/safeDecode');
 const { roomManager: defaultRoomManager } = require('../../infrastructure/database/repositories/RoomManager');
 
 class RoomHub {
@@ -161,6 +162,16 @@ class RoomHub {
       // Lắng nghe sự kiện từ client
       socket.on('message', (data) => this.handleMessage(socket, data));
 
+      // SEC-03: thiếu listener 'error' khiến frame WS sai (không mask/UTF-8 lỗi) kill process
+      socket.on('error', (err) => {
+        console.warn('[WS] Lỗi socket:', err && err.message);
+        try {
+          socket.terminate();
+        } catch {
+          /* ignore */
+        }
+      });
+
       // Lắng nghe đóng kết nối
       socket.on('close', () => this.handleDisconnect(socket));
     });
@@ -179,7 +190,14 @@ class RoomHub {
     let roomCode = urlObj.searchParams.get('roomCode');
     if (!roomCode) {
       const match = urlObj.pathname.match(/^\/ws\/room\/([^/]+)$/);
-      if (match) roomCode = decodeURIComponent(match[1]);
+      if (match) {
+        // SEC-03: URI hỏng (vd "%E0") trước đây làm crash process
+        roomCode = safeDecode(match[1]);
+        if (roomCode === null) {
+          socket.destroy();
+          return;
+        }
+      }
     }
 
     let token = urlObj.searchParams.get('token');
@@ -224,6 +242,20 @@ class RoomHub {
   }
 
   handleMessage(socket, rawMessage) {
+    // SEC-03: bọc toàn bộ xử lý để một payload xấu không làm sập process
+    try {
+      this._handleMessage(socket, rawMessage);
+    } catch (err) {
+      console.error('[WS] Lỗi xử lý tin nhắn:', err);
+      this.send(socket, {
+        type: 'error',
+        code: 'INTERNAL_ERROR',
+        message: 'Không xử lý được tin nhắn.',
+      });
+    }
+  }
+
+  _handleMessage(socket, rawMessage) {
     const meta = this.clients.get(socket);
     if (!meta) return;
 
@@ -234,6 +266,12 @@ class RoomHub {
       payload = JSON.parse(rawMessage.toString());
     } catch {
       this.send(socket, { type: 'error', code: 'INVALID_JSON', message: 'Dữ liệu tin nhắn JSON không hợp lệ.' });
+      return;
+    }
+
+    // SEC-03: JSON "null"/mảng/số không có .type -> trước đây TypeError
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload) || typeof payload.type !== 'string') {
+      this.send(socket, { type: 'error', code: 'INVALID_PAYLOAD', message: 'Tin nhắn không hợp lệ.' });
       return;
     }
 
@@ -337,6 +375,12 @@ class RoomHub {
           code: 'NOT_YOUR_TURN',
           message: 'Chưa tới lượt đi của bạn.',
         });
+        return;
+      }
+
+      // SEC-03: toạ độ phải là chuỗi, tránh undefined/kiểu lạ
+      if (typeof payload.from !== 'string' || typeof payload.to !== 'string') {
+        this.send(socket, { type: 'error', code: 'INVALID_MOVE', message: 'Toạ độ nước đi không hợp lệ.' });
         return;
       }
 
