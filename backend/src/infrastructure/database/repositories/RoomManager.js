@@ -1,17 +1,34 @@
 const crypto = require('node:crypto');
 const Room = require('../../../domain/entities/Room');
 
+const MAX_ROOMS_PER_USER = 20;
+const EMPTY_ROOM_TTL_MS = 30 * 60 * 1000; // phòng không còn ai sau 30 phút
+const FINISHED_ROOM_TTL_MS = 60 * 60 * 1000; // phòng đã kết thúc sau 60 phút
+
 class RoomManager {
-  constructor() {
+  constructor({ sweepIntervalMs = 60 * 1000, maxRoomsPerUser = MAX_ROOMS_PER_USER } = {}) {
     this.rooms = new Map(); // roomCode -> Room
+    this.seatReleaseTimers = new Map();
+    this.maxRoomsPerUser = maxRoomsPerUser;
+
+    // BE-08: sweeper dọn phòng bỏ hoang để Map không phình vô hạn
+    this.sweepIntervalMs = Number(sweepIntervalMs);
+    if (this.sweepIntervalMs > 0) {
+      this.sweeper = setInterval(() => this.sweep(), this.sweepIntervalMs);
+      if (this.sweeper.unref) this.sweeper.unref();
+    }
   }
 
   generateCode() {
-    let code;
-    do {
-      code = crypto.randomInt(100000, 1000000).toString(); // Đảm bảo đúng 6 chữ số ngẫu nhiên [100000-999999]
-    } while (this.rooms.has(code));
-    return code;
+    // BE-08: giới hạn số lần thử, hết thì báo lỗi thay vì treo vô hạn
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const code = crypto.randomInt(100000, 1000000).toString();
+      if (!this.rooms.has(code)) return code;
+    }
+    const err = new Error('Không sinh được mã phòng mới, vui lòng thử lại.');
+    err.code = 'ROOM_CODE_EXHAUSTED';
+    err.statusCode = 503;
+    throw err;
   }
 
   createRoom({ hostUser, name, isPrivate = false, maxSpectators = 10 }) {
@@ -22,18 +39,87 @@ class RoomManager {
       throw err;
     }
 
+    // BE-08: validate tên phòng
+    const cleanName = typeof name === 'string' ? name.trim() : '';
+    if (name !== undefined && name !== null && cleanName.length > 50) {
+      const err = new Error('Tên phòng tối đa 50 ký tự.');
+      err.code = 'INVALID_ROOM_NAME';
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // BE-08: validate maxSpectators (trước đây Number('abc') = NaN -> không giới hạn)
+    const spectatorLimit = maxSpectators === undefined || maxSpectators === null || maxSpectators === ''
+      ? 10
+      : Number(maxSpectators);
+    if (!Number.isInteger(spectatorLimit) || spectatorLimit < 0 || spectatorLimit > 10) {
+      const err = new Error('Số khán giả tối đa phải là số nguyên từ 0 đến 10.');
+      err.code = 'INVALID_MAX_SPECTATORS';
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // BE-08: giới hạn số phòng đang mở của một người
+    const openRooms = Array.from(this.rooms.values()).filter(
+      (room) => Number(room.hostId) === Number(hostUser.id) && room.status !== 'CLOSED',
+    );
+    if (openRooms.length >= this.maxRoomsPerUser) {
+      const err = new Error(`Mỗi người chỉ được mở tối đa ${this.maxRoomsPerUser} phòng cùng lúc.`);
+      err.code = 'TOO_MANY_ROOMS';
+      err.statusCode = 429;
+      throw err;
+    }
+
     const code = this.generateCode();
     const room = new Room({
       code,
-      name: name && name.trim() ? name.trim() : `Phòng cờ của ${hostUser.displayName || hostUser.username}`,
+      name: cleanName || `Phòng cờ của ${hostUser.displayName || hostUser.username}`,
       hostId: hostUser.id,
       hostUser,
       isPrivate: Boolean(isPrivate),
-      maxSpectators,
+      maxSpectators: spectatorLimit,
     });
 
     this.rooms.set(code, room);
     return room;
+  }
+
+  /**
+   * BE-08: dọn phòng bỏ hoang (không còn ai / đã kết thúc quá lâu).
+   * Chỉ dựa trên dữ liệu Room để không phụ thuộc tầng socket.
+   */
+  sweep(now = Date.now()) {
+    let removed = 0;
+    for (const [code, room] of Array.from(this.rooms.entries())) {
+      const lastActivity = room.lastActivityAt ? new Date(room.lastActivityAt).getTime() : null;
+      const isFinished = room.status === 'FINISHED' || room.status === 'CLOSED';
+      const ttl = isFinished ? FINISHED_ROOM_TTL_MS : EMPTY_ROOM_TTL_MS;
+      const participantCount = (room.players.red ? 1 : 0) + (room.players.black ? 1 : 0);
+      const isIdle = lastActivity ? now - lastActivity > ttl : true;
+
+      // Không bao giờ dọn phòng đang thi đấu
+      if (room.status === 'PLAYING') continue;
+
+      if (isIdle && (isFinished || participantCount === 0)) {
+        this.rooms.delete(code);
+        removed += 1;
+        continue;
+      }
+
+      // Phòng chưa kết thúc nhưng bỏ hoang quá TTL (không ai tương tác) cũng dọn
+      if (isIdle && participantCount <= 1) {
+        this.rooms.delete(code);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  stopSweeper() {
+    if (this.sweeper) {
+      clearInterval(this.sweeper);
+      this.sweeper = null;
+    }
   }
 
   findByCode(code) {

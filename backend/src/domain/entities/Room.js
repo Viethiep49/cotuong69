@@ -19,6 +19,8 @@ class Room {
     this.maxSpectators = Number(maxSpectators);
     this.status = status; // WAITING_OPPONENT, FULL_PLAYERS, PLAYING, FINISHED, CLOSED
     this.createdAt = createdAt;
+    // BE-08: mốc hoạt động cuối để sweeper dọn phòng bỏ hoang
+    this.lastActivityAt = new Date();
 
     // Người chơi: Red (Host mặc định là Red) và Black
     this.players = {
@@ -66,6 +68,10 @@ class Room {
     return roleInfo !== null && roleInfo.role === 'PLAYER';
   }
 
+  touch() {
+    this.lastActivityAt = new Date();
+  }
+
   addParticipant(user) {
     if (!user || !user.id) {
       const err = new Error('Thông tin người dùng không hợp lệ.');
@@ -75,6 +81,7 @@ class Room {
     }
 
     const uid = Number(user.id);
+    this.touch();
     if (this.kickedUsers.has(uid)) {
       const err = new Error('Bạn đã bị chủ phòng loại khỏi phòng này.');
       err.code = 'USER_KICKED';
@@ -371,6 +378,7 @@ class Room {
   }
 
   startGame(hostId, matchOptions = {}) {
+    this.touch();
     if (hostId && Number(hostId) !== Number(this.hostId)) {
       const err = new Error('Chỉ chủ phòng mới có quyền bắt đầu trận đấu.');
       err.code = 'FORBIDDEN';
@@ -426,6 +434,7 @@ class Room {
   }
 
   applyMove(color, from, to) {
+    this.touch();
     if (!this.matchState) return { accepted: false, error: 'Chưa có trạng thái trận đấu.' };
     if (this.status !== 'PLAYING' || this.matchState.isPaused) {
       return { accepted: false, error: 'Trận đấu đang tạm dừng hoặc không hoạt động.' };

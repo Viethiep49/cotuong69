@@ -57,6 +57,17 @@ class SendDirectInvitationUseCase {
       throw err;
     }
 
+    // BE-08: người gửi phải đang ở trong phòng thì mới được mời người khác
+    const senderRole = typeof room.getParticipantRole === 'function'
+      ? room.getParticipantRole(Number(senderId))
+      : null;
+    if (!senderRole) {
+      const err = new Error('Bạn phải ở trong phòng mới có thể mời bạn bè.');
+      err.code = 'NOT_IN_ROOM';
+      err.statusCode = 403;
+      throw err;
+    }
+
     // 2. Kiểm tra mối quan hệ bạn bè
     const areFriends = await this.friendRepository.areFriends(senderId, friendId);
     if (!areFriends) {
@@ -79,8 +90,13 @@ class SendDirectInvitationUseCase {
       this.userRepository.findById(friendId),
     ]);
 
-    // 4. Tạo lời mời với thời hạn đếm ngược 60 giây
-    const timeoutMs = timeoutSeconds * 1000;
+    // 4. Tạo lời mời với thời hạn đếm ngược (BE-08: ép số nguyên và clamp 10-120 giây;
+    // trước đây nhận chuỗi -> NaN -> Invalid Date -> lời mời không bao giờ hết hạn)
+    const parsedTimeout = Number.parseInt(timeoutSeconds, 10);
+    const safeTimeoutSeconds = Number.isFinite(parsedTimeout)
+      ? Math.min(120, Math.max(10, parsedTimeout))
+      : 60;
+    const timeoutMs = safeTimeoutSeconds * 1000;
     const invitation = this.invitationManager.createInvitation({
       sender,
       receiver,
@@ -90,7 +106,7 @@ class SendDirectInvitationUseCase {
 
     return {
       success: true,
-      message: `Đã gửi lời mời tới ${receiver.displayName || receiver.username}. Thời gian chờ: ${timeoutSeconds} giây.`,
+      message: `Đã gửi lời mời tới ${receiver.displayName || receiver.username}. Thời gian chờ: ${safeTimeoutSeconds} giây.`,
       invitation,
     };
   }
