@@ -2413,6 +2413,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (token) {
       openResetPasswordModal(token);
+      // FE-11: xoá token khỏi address bar để không lưu vào history/log
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('token');
+        url.searchParams.delete('resetToken');
+        const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+        window.history.replaceState({}, document.title, nextUrl);
+      } catch {
+        /* ignore */
+      }
     }
   }
 

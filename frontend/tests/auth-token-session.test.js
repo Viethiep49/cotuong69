@@ -137,8 +137,10 @@ describe('Nghiệm thu Task COT-581: Xử lý lưu trữ JWT Token và duy trì 
       });
 
       const storage = new TokenStorageService();
+      // FE-11: token sai định dạng giờ bị coi là hết hạn ngay (fail closed), nên
+      // dùng JWT hợp lệ về cú pháp để kiểm tra đúng nhánh server trả 401.
       storage.saveTokens({
-        accessToken: 'expired_on_server_token',
+        accessToken: createMockJwt(500),
         user: { id: 'u1', username: 'user1' }
       });
 

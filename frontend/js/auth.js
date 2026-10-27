@@ -308,7 +308,8 @@ class TokenStorageService {
     if (!token) return true;
     try {
       const parts = token.split('.');
-      if (parts.length !== 3) return false;
+      // FE-11: token không đúng định dạng JWT -> coi như hết hạn (fail closed)
+      if (parts.length !== 3) return true;
       const base64Url = parts[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       let jsonPayload;
@@ -317,7 +318,8 @@ class TokenStorageService {
       } else if (typeof Buffer !== 'undefined') {
         jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
       } else {
-        return false;
+        // Không có atob/Buffer -> không xác thực được, coi như hết hạn
+        return true;
       }
       const payload = JSON.parse(jsonPayload);
       if (payload && payload.exp) {
@@ -325,7 +327,8 @@ class TokenStorageService {
       }
       return false;
     } catch {
-      return false;
+      // FE-11: payload hỏng -> coi như hết hạn
+      return true;
     }
   }
 
