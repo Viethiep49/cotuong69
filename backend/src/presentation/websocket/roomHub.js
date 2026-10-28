@@ -1668,20 +1668,18 @@ class RoomHub {
     if (!hasActiveRed && !hasActiveBlack) {
       // REV-07: đi qua settleMatch (không Elo, có ghi pvp_matches, clear timer) thay vì
       // tự set trạng thái rồi return như trước
-      const redPlayer = room.players.red;
-      const blackPlayer = room.players.black;
+      const releaseUserIds = [room.players.red && room.players.red.id, room.players.black && room.players.black.id];
       try {
+        // REV2-04: settleMatch gỡ cả hai ghế, chuyển chủ phòng cho khán giả (hoặc đóng
+        // phòng nếu trống) và broadcast HostTransferred/UserLeft.
         await this.settleMatch(room, null, 'SYSTEM_ERROR', {
           skipElo: true,
+          releaseUserIds,
           message: 'Trận đấu bị hủy và không ghi nhận kết quả do sự cố hệ thống khiến cả hai người chơi cùng mất kết nối.',
         });
       } catch (err) {
         console.error('[settleMatch] system error:', err);
       }
-
-      // REV-07: cả hai đã rời -> trả ghế để phòng trống và được sweeper dọn
-      if (redPlayer) room.removeParticipant(redPlayer.id);
-      if (blackPlayer) room.removeParticipant(blackPlayer.id);
       room.touch();
       return;
     }
