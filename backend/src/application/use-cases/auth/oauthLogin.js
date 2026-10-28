@@ -5,6 +5,10 @@ const defaultDb = require('../../../config/db');
 const { generateAccessToken } = require('../../services/tokenService');
 const { sanitizeRedirectUrl } = require('./loginUser');
 const { validateDisplayName } = require('../../../domain/validators/profileValidator');
+const { classifyUniqueViolation, UNIQUE_VIOLATION_MESSAGES } = require('../../../core/uniqueViolation');
+
+// REV2-25: số lần thử lại khi tên đăng nhập tự sinh bị người khác chiếm đúng lúc (race)
+const MAX_USERNAME_RACE_RETRIES = 3;
 
 /**
  * REV-15: tên hiển thị lấy từ Google phải qua validateDisplayName; không hợp lệ
@@ -114,6 +118,25 @@ class OAuthLoginUseCase {
    * SEC-05: tạo user + oauth identity nguyên tử (rollback nếu 1 bước lỗi).
    */
   async createUserWithIdentity(provider, profile) {
+    // REV2-25: tên đăng nhập tự sinh được kiểm tra "còn trống" rồi mới tạo; hai lần đăng nhập OAuth
+    // song song có thể cùng chọn một tên -> DB báo UNIQUE (23505). Tên tự sinh không do người dùng
+    // chọn nên thử lại với tên kế tiếp; hết lượt thử hoặc trùng email thì trả lỗi nghiệp vụ 409.
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.createUserWithIdentityOnce(provider, profile);
+      } catch (err) {
+        const kind = classifyUniqueViolation(err);
+        if (!kind) throw err;
+        if (kind === 'USERNAME_EXISTS' && attempt < MAX_USERNAME_RACE_RETRIES) continue;
+        const error = new Error(UNIQUE_VIOLATION_MESSAGES[kind]);
+        error.code = kind;
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+  }
+
+  async createUserWithIdentityOnce(provider, profile) {
     const baseUsername = profile.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').toLowerCase() || `${provider}_user`;
 
     const client = this.db && typeof this.db.getClient === 'function' ? await this.db.getClient() : null;

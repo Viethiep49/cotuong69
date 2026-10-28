@@ -73,6 +73,10 @@ describe('REV-03: map mã lỗi nghiệp vụ', () => {
           const source = fs.readFileSync(full, 'utf8');
           for (const match of source.matchAll(/err\.code\s*=\s*'([A-Z][A-Z0-9_]+)'/g)) codes.add(match[1]);
           for (const match of source.matchAll(/new AppError\(\s*'([A-Z][A-Z0-9_]+)'/g)) codes.add(match[1]);
+          // REV2-25: mã lỗi viết thẳng trong body JSON / tin WS (`code: 'METHOD_NOT_ALLOWED'`) cũng phải khai báo
+          for (const match of source.matchAll(/code:\s*'([A-Z][A-Z0-9_]+)'/g)) {
+            if (match[1] !== 'INTERNAL_ERROR') codes.add(match[1]); // INTERNAL_ERROR là mã dự phòng của errorResponse
+          }
         }
       }
     };

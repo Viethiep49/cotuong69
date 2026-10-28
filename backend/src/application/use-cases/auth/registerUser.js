@@ -1,6 +1,7 @@
 const { validateRegisterInput } = require('../../../domain/validators/authValidator');
 const { hashPassword } = require('../../services/passwordService');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
+const { classifyUniqueViolation, UNIQUE_VIOLATION_MESSAGES } = require('../../../core/uniqueViolation');
 
 class RegisterUserUseCase {
   constructor({ userRepository = new PgUserRepository(), hasher = { hashPassword } } = {}) {
@@ -52,15 +53,12 @@ class RegisterUserUseCase {
         status: 'ACTIVE',
       });
     } catch (err) {
-      const msg = err.message || '';
-      if (msg.includes('UNIQUE constraint failed: users.username') || msg.includes('users_username_key')) {
-        const error = new Error('Tên đăng nhập đã tồn tại trên hệ thống.');
-        error.code = 'USERNAME_EXISTS';
-        throw error;
-      }
-      if (msg.includes('UNIQUE constraint failed: users.email') || msg.includes('users_email_key')) {
-        const error = new Error('Email đã được sử dụng bởi một tài khoản khác.');
-        error.code = 'EMAIL_EXISTS';
+      // REV2-25: hai request song song cùng qua bước kiểm tra trùng -> DB báo vi phạm UNIQUE
+      // (PostgreSQL 23505 / SQLite, kể cả index LOWER(username)); trả 409 thay vì 500.
+      const kind = classifyUniqueViolation(err);
+      if (kind) {
+        const error = new Error(UNIQUE_VIOLATION_MESSAGES[kind]);
+        error.code = kind;
         throw error;
       }
       throw err;
