@@ -123,7 +123,13 @@ function querySqlite(text, params = []) {
   sqliteText = sqliteText
     .replace(/SERIAL PRIMARY KEY/gi, 'INTEGER PRIMARY KEY AUTOINCREMENT')
     .replace(/TIMESTAMP WITH TIME ZONE/gi, 'DATETIME')
-    .replace(/BOOLEAN/gi, 'INTEGER');
+    .replace(/BOOLEAN/gi, 'INTEGER')
+    // REV-14: Postgres dùng `NOW() - make_interval(mins => $n)`; SQLite lưu created_at
+    // dạng UTC 'YYYY-MM-DD HH:MM:SS' nên so sánh với datetime('now', '-N minutes')
+    .replace(
+      /NOW\(\)\s*-\s*make_interval\(\s*mins\s*=>\s*\?\s*\)/gi,
+      "datetime('now', '-' || ? || ' minutes')"
+    );
 
   try {
     // BE-02: UPDATE/INSERT ... RETURNING cũng trả về dòng -> phải dùng all()

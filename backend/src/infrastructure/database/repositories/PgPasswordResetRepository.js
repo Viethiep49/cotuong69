@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const defaultDb = require('../../../config/db');
+const PgUserRepository = require('./PgUserRepository');
 
 /**
  * BE-02: chỉ lưu SHA-256 của token; DB không bao giờ chứa token thô.
@@ -22,11 +23,12 @@ class PgPasswordResetRepository {
    * Đếm số lần yêu cầu reset password của email/userId trong khoảng thời gian
    */
   async countRecentRequests(userId, windowMinutes = 10) {
-    const since = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString().replace('T', ' ').replace(/\..+/, '');
+    // REV-14: tính cửa sổ ngay trong DB (NOW() - interval) để không lệch múi giờ
+    // giữa chuỗi thời gian ở Node và cột TIMESTAMPTZ của Postgres.
     const res = await this.db.query(
       `SELECT COUNT(*) as count FROM password_reset_tokens
-       WHERE user_id = $1 AND created_at >= $2`,
-      [Number(userId), since]
+       WHERE user_id = $1 AND created_at >= NOW() - make_interval(mins => $2)`,
+      [Number(userId), Math.trunc(Number(windowMinutes))]
     );
     return Number(res.rows[0]?.count || 0);
   }
@@ -99,6 +101,38 @@ class PgPasswordResetRepository {
     );
     if (!res.rows || res.rows.length === 0) return null;
     return Number(res.rows[0].user_id);
+  }
+
+  /**
+   * REV-14: đánh dấu token đã dùng + đổi mật khẩu + thu hồi token còn lại trong
+   * MỘT transaction. Nếu bước đổi mật khẩu lỗi thì token KHÔNG bị đốt.
+   * @returns {Promise<boolean>} false nếu token không còn hợp lệ (đã bị dùng/hết hạn/khác user)
+   */
+  async resetPasswordAtomically({ token, userId, passwordHash }) {
+    const client = await this.db.getClient();
+    try {
+      await client.query('BEGIN');
+      const txDb = { query: (text, params) => client.query(text, params) };
+      const txResetRepo = new PgPasswordResetRepository({ db: txDb });
+      const consumedUserId = await txResetRepo.consumeToken(token);
+      if (consumedUserId === null || Number(consumedUserId) !== Number(userId)) {
+        await client.query('ROLLBACK');
+        return false;
+      }
+      await new PgUserRepository({ db: txDb }).updatePassword(userId, passwordHash);
+      await txResetRepo.invalidateOldTokens(userId);
+      await client.query('COMMIT');
+      return true;
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {
+        // bỏ qua: lỗi gốc quan trọng hơn
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**

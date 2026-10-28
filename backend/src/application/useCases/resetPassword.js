@@ -1,4 +1,4 @@
-const { hashPassword } = require('../services/passwordService');
+const { hashPassword, MAX_PASSWORD_BYTES } = require('../services/passwordService');
 const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
 const PgPasswordResetRepository = require('../../infrastructure/database/repositories/PgPasswordResetRepository');
 
@@ -31,6 +31,13 @@ class ResetPasswordUseCase {
 
     if (newPassword.length < 8) {
       const err = new Error('Mật khẩu mới phải có tối thiểu 8 ký tự.');
+      err.code = 'VALIDATION_ERROR';
+      throw err;
+    }
+
+    // REV-14: bcrypt chỉ xử lý tối đa 72 byte -> báo lỗi 400 trước khi băm (không để rơi thành 500)
+    if (Buffer.byteLength(newPassword, 'utf8') > MAX_PASSWORD_BYTES) {
+      const err = new Error(`Mật khẩu mới không được dài quá ${MAX_PASSWORD_BYTES} byte.`);
       err.code = 'VALIDATION_ERROR';
       throw err;
     }
@@ -75,20 +82,19 @@ class ResetPasswordUseCase {
     // Băm mật khẩu mới bằng Bcrypt
     const newHash = await this.hasher.hashPassword(newPassword);
 
-    // BE-02: dùng token NGUYÊN TỬ trước khi đổi mật khẩu — chặn dùng 2 lần khi
-    // có 2 request song song (kiểm tra ở trên chỉ để trả lỗi thân thiện).
-    const consumedUserId = await this.resetRepository.consumeToken(cleanToken);
-    if (consumedUserId === null || Number(consumedUserId) !== Number(user.id)) {
+    // BE-02 + REV-14: dùng token NGUYÊN TỬ, đổi mật khẩu (set password_changed_at để
+    // thu hồi JWT cũ) và vô hiệu hoá token còn lại trong MỘT transaction — chặn dùng
+    // 2 lần khi có 2 request song song, và lỗi giữa chừng không đốt mất token.
+    const done = await this.resetRepository.resetPasswordAtomically({
+      token: cleanToken,
+      userId: user.id,
+      passwordHash: newHash,
+    });
+    if (!done) {
       const err = new Error('Mã xác thực này đã được sử dụng. Một token không thể dùng lại lần hai.');
       err.code = 'TOKEN_ALREADY_USED';
       throw err;
     }
-
-    // Cập nhật CSDL (đồng thời set password_changed_at để thu hồi JWT cũ)
-    await this.userRepository.updatePassword(user.id, newHash);
-
-    // Vô hiệu hóa tất cả token cũ còn lại của user này
-    await this.resetRepository.invalidateOldTokens(user.id);
 
     return {
       success: true,
