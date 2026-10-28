@@ -290,6 +290,20 @@ describe('useMatch', () => {
       expect(sockets()).toHaveLength(1);
     });
 
+    it('REV2-11: đóng với mã 4008 (heartbeat timeout của roomHub) thì VẪN kết nối lại', async () => {
+      vi.useFakeTimers();
+      const { result } = renderHook(() => useMatch('COT-615'));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      lastSocket().open();
+
+      lastSocket().drop(4008);
+      expect(result.current.error).toMatch(/kết nối lại/);
+      expect(result.current.error).not.toMatch(/từ chối/);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(sockets().length).toBeGreaterThan(1);
+    });
+
     it('đối thủ rớt mạng -> bật đếm ngược và khoá nước đi; đối thủ quay lại -> mở khoá', async () => {
       const { result } = await renderConnectedMatch();
       lastSocket().receive({ type: 'welcome', color: 'red', state: MATCH });

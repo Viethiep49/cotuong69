@@ -24,12 +24,17 @@ export function isFatalHttpStatus(status) {
 }
 
 /**
- * Mã đóng WebSocket do server chủ động từ chối (policy 1008 hoặc mã ứng dụng 4000-4999,
- * ví dụ 4001 xác thực/phòng đầy) thì thử lại cũng vô ích.
+ * Mã đóng WebSocket mà server dùng để TỪ CHỐI hẳn (thử lại cũng vô ích):
+ *  - 1008 policy violation
+ *  - 4001 không vào được phòng (phòng đầy / không hợp lệ) — roomHub.setupWss
+ *  - 4003 bị chủ phòng loại (Kicked) — roomHub kick
+ * REV2-11: trước đây MỌI mã 4000-4999 bị coi là fatal, nhưng roomHub dùng 4008 cho
+ * "Heartbeat timeout" (rớt mạng thoáng qua) -> client bỏ cuộc thay vì kết nối lại.
  */
+export const FATAL_CLOSE_CODES = [1008, 4001, 4003];
+
 export function isFatalCloseCode(code) {
-  const value = Number(code);
-  return value === 1008 || (value >= 4000 && value <= 4999);
+  return FATAL_CLOSE_CODES.includes(Number(code));
 }
 
 /**

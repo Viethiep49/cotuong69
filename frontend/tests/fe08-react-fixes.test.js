@@ -34,8 +34,9 @@ describe('FE-08: reconnectPolicy', () => {
     for (const status of [408, 429, 500, 502, 503, undefined, null]) {
       assert.strictEqual(isFatalHttpStatus(status), false, String(status));
     }
-    for (const code of [1008, 4001, 4401]) assert.strictEqual(isFatalCloseCode(code), true, String(code));
-    for (const code of [1000, 1001, 1006, 1011, undefined]) assert.strictEqual(isFatalCloseCode(code), false, String(code));
+    // REV2-11: chỉ các mã server dùng để từ chối hẳn; 4008 (heartbeat timeout) phải thử lại
+    for (const code of [1008, 4001, 4003]) assert.strictEqual(isFatalCloseCode(code), true, String(code));
+    for (const code of [1000, 1001, 1006, 1011, 4008, 4000, 4401, undefined]) assert.strictEqual(isFatalCloseCode(code), false, String(code));
   });
 
   test('sự kiện online khi WS còn đóng -> phải kết nối lại, KHÔNG mở khóa bàn cờ', async () => {
