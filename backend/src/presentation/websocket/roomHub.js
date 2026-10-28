@@ -632,6 +632,30 @@ class RoomHub {
         return;
       }
 
+      // REV2-07: timer hết giờ chạy chậm ~50ms (và có thể bị trễ vòng lặp sự kiện) nên một nước
+      // đi đến sau hạn vẫn lọt vào. Kiểm tra lại đồng hồ NGAY lúc nhận nước đi: hết giờ lượt
+      // hoặc hết đồng hồ tổng của người đi -> chốt TIMEOUT, không áp dụng nước đi.
+      const turnLeftMs = typeof room.getTurnRemainingMs === 'function' ? room.getTurnRemainingMs() : Infinity;
+      const clockLeftMs = typeof room.getClockRemainingMs === 'function'
+        ? room.getClockRemainingMs(playerColor)
+        : Infinity;
+      if (turnLeftMs <= 0 || clockLeftMs <= 0) {
+        const opponentColor = playerColor === 'red' ? 'black' : 'red';
+        const sideName = playerColor === 'red' ? 'Đỏ' : 'Đen';
+        this.send(socket, {
+          type: 'error',
+          code: 'TIME_EXPIRED',
+          message: 'Đã hết thời gian, nước đi không được chấp nhận.',
+        });
+        if (room.matchState.remainingClocks) room.matchState.remainingClocks[playerColor] = 0;
+        await this.settleMatch(room, opponentColor, 'TIMEOUT', {
+          message: clockLeftMs <= 0 && turnLeftMs > 0
+            ? `Kỳ thủ bên ${sideName} hết đồng hồ tổng của ván cờ.`
+            : `Kỳ thủ bên ${sideName} hết thời gian suy nghĩ.`,
+        });
+        return;
+      }
+
       const turnStartedAt = room.matchState.turnStartedAt;
       const moveResult = room.applyMove(playerColor, payload.from, payload.to);
       if (!moveResult.accepted) {
