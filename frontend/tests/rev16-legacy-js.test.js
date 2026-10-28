@@ -45,6 +45,21 @@ describe('REV-16: bỏ user hardcode "Nguyễn Tấn Sang"', () => {
     assert.strictEqual(chat.isChatAllowed(), false);
   });
 
+  test('index.html: header không còn tên/avatar hardcode, placeholder trung tính "Khách" và JS vẫn điền tên thật', () => {
+    const html = read('index.html');
+    assert.ok(!html.includes('Nguyễn Tấn Sang'), 'index.html còn tên hardcode');
+    assert.ok(!html.includes('>桑<'), 'index.html còn avatar hardcode của user mẫu');
+    const nameSpan = html.match(/<span class="user-name" id="currentUserName">([^<]*)<\/span>/);
+    assert.ok(nameSpan, 'không tìm thấy span currentUserName');
+    assert.strictEqual(nameSpan[1], 'Khách');
+
+    // updateUserAuthUi điền tên từ người dùng thật; khách thì thanh người dùng bị ẩn
+    const rooms = read('js/rooms.js');
+    const ui = rooms.slice(rooms.indexOf('function updateUserAuthUi'), rooms.indexOf('async function handleLogout'));
+    assert.ok(ui.includes("nameEl.textContent = user.displayName || user.username"));
+    assert.ok(ui.includes("userProfileBar.style.display = 'none'"));
+  });
+
   test('không còn chuỗi hardcode trong js/ và ChatBox.jsx', () => {
     for (const rel of ['js/rooms.js', 'js/chat.js', 'src/presentation/components/chat/ChatBox.jsx']) {
       const src = read(rel).replace(/\/\/.*$/gm, '');
