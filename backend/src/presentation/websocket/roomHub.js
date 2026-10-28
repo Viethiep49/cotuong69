@@ -1337,6 +1337,19 @@ class RoomHub {
     // sau `await` nên nếu có người bấm "start" trong lúc chờ ghi Elo/DB, ván mới
     // sẽ bị gắn kết quả của ván cũ và ván mới kết thúc mà không có Elo/matchEnded.
     const matchId = room.matchId;
+    // REV2-05: người còn trong reconnectState (đang vắng, không socket/timer sau khi chốt)
+    // phải bị gỡ ghế, nếu không để lại ghế ma khoá phòng. Thu thập TRƯỚC khi xoá reconnectState.
+    const releaseUserIds = [...(options.releaseUserIds || [])];
+    const rs = room.reconnectState;
+    if (rs) {
+      if (rs.bySide) {
+        for (const sideKey of ['red', 'black']) {
+          if (rs.bySide[sideKey]) releaseUserIds.push(rs.bySide[sideKey].disconnectedUserId);
+        }
+      } else if (rs.disconnectedUserId !== undefined) {
+        releaseUserIds.push(rs.disconnectedUserId);
+      }
+    }
     room.settling = true;
     room.settledMatchId = matchId;
     room.matchState.status = 'completed';
@@ -1353,7 +1366,7 @@ class RoomHub {
     // rồi GỠ GHẾ NGAY (đồng bộ) trước khi await. Trước đây ghế chỉ bị gỡ sau await nên
     // người quay lại trong lúc chờ DB bị chấp nhận rồi bị đuổi dù socket còn mở.
     const persisting = this.persistSettlement(room, matchId, winnerColor, endReason, options);
-    const released = this._releaseSeats(room, options.releaseUserIds || []);
+    const released = this._releaseSeats(room, releaseUserIds);
     try {
       return await persisting;
     } finally {
