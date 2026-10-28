@@ -15,8 +15,10 @@ class FakeSocket extends EventEmitter {
 
   send(raw) { this.inbox.push(JSON.parse(raw)); }
 
-  close() {
+  close(code, reason) {
     if (this.readyState !== 1) return;
+    this.closeCode = code;
+    this.closeReason = reason;
     this.readyState = 3;
     setImmediate(() => this.emit('close'));
   }

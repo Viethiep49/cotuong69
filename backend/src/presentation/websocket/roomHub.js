@@ -88,6 +88,7 @@ class RoomHub {
     onlineUserManager = defaultOnlineUserManager,
     pvpMatchRepository = null,
     enableHeartbeat = true,
+    sessionRecheckMs = 30000,
   } = {}) {
     this.roomManager = roomManager;
     this.tokenService = tokenService;
@@ -116,6 +117,10 @@ class RoomHub {
     this.heartbeatIntervalMs = Number(heartbeatIntervalMs);
     this.heartbeatTimeoutMs = Number(heartbeatTimeoutMs);
     this.reconnectCountdownSeconds = Number(reconnectCountdownSeconds);
+    // REV2-23: kiểm tra lại phiên (khoá tài khoản / đổi mật khẩu) của các socket đang mở
+    this.sessionRecheckMs = Number(sessionRecheckMs);
+    this.sessionCheckedAt = new Map(); // `${userId}:${iat}` -> timestamp lần kiểm tra gần nhất
+    this.sessionRechecking = false;
 
     // BE-07: giới hạn payload 64KB (trước đây mặc định 100MB)
     // FE-06: chọn subprotocol 'cotuong.v1' (nếu client có gửi Sec-WebSocket-Protocol)
@@ -1261,8 +1266,63 @@ class RoomHub {
     }
   }
 
+  /**
+   * REV2-23: socket đã mở KHÔNG tự bị đóng khi tài khoản bị khoá hoặc người dùng đổi mật khẩu
+   * (chỉ lúc upgrade mới kiểm tra phiên). Định kỳ kiểm tra lại phiên của mọi socket đang mở;
+   * phiên không còn hợp lệ (401/403) thì đóng bằng mã 1008 (client coi là từ chối, không thử lại).
+   * Lỗi tạm thời (DB lỗi) KHÔNG đóng socket. Chạy tuần tự để không dồn tải lên DB.
+   * @param {number} [now]
+   * @returns {Promise<number>} số socket đã đóng
+   */
+  async recheckSessions(now = Date.now()) {
+    if (this.sessionRechecking || !this.userRepository || typeof this.userRepository.findById !== 'function') return 0;
+    this.sessionRechecking = true;
+    let closed = 0;
+    try {
+      const groups = new Map(); // `${userId}:${iat}` -> { user, sockets: [] }
+      for (const [socket, meta] of Array.from(this.clients.entries())) {
+        const decoded = meta.user || {};
+        const key = `${meta.userId}:${decoded.iat ?? ''}`;
+        if (!groups.has(key)) groups.set(key, { id: meta.userId, iat: decoded.iat, sockets: [] });
+        groups.get(key).sockets.push(socket);
+      }
+      for (const key of Array.from(this.sessionCheckedAt.keys())) {
+        if (!groups.has(key)) this.sessionCheckedAt.delete(key);
+      }
+
+      for (const [key, group] of groups) {
+        const last = this.sessionCheckedAt.get(key);
+        if (last !== undefined && now - last < this.sessionRecheckMs) continue;
+        this.sessionCheckedAt.set(key, now);
+        try {
+          await this.ensureSessionActive({ id: group.id, iat: group.iat });
+        } catch (err) {
+          const status = Number(err && err.statusCode);
+          if (status !== 401 && status !== 403) {
+            console.warn('[WS] không kiểm tra lại được phiên:', err && err.message);
+            continue;
+          }
+          for (const socket of group.sockets) {
+            closed += 1;
+            try {
+              socket.close(1008, 'Session revoked');
+            } catch {
+              try { socket.terminate(); } catch { /* ignore */ }
+            }
+            this.handleDisconnect(socket, 'SESSION_REVOKED');
+          }
+          this.sessionCheckedAt.delete(key);
+        }
+      }
+    } finally {
+      this.sessionRechecking = false;
+    }
+    return closed;
+  }
+
   checkHeartbeats() {
     const now = Date.now();
+    this.recheckSessions(now).catch((err) => console.error('[WS] recheckSessions:', err));
     for (const [socket, meta] of Array.from(this.clients.entries())) {
       if (socket.readyState !== 1) continue;
 
