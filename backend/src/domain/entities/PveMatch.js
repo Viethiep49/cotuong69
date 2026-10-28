@@ -31,6 +31,7 @@ const PVE_END_REASON = Object.freeze({
   NO_LEGAL_MOVES: 'NO_LEGAL_MOVES',
   TIMEOUT: 'TIMEOUT',
   RESIGN: 'RESIGN',
+  DRAW_PLY_LIMIT: 'DRAW_PLY_LIMIT', // REV-13: hoà do đạt giới hạn số nước đi
 });
 
 const PVE_ACTOR = Object.freeze({

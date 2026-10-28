@@ -1313,9 +1313,12 @@ class RoomHub {
 
     room.lastSettlement = record;
 
+    // REV-13: hoà (đạt giới hạn số nước) khác với huỷ ván do sự cố
     const defaultMessage = winnerColor
       ? `Kỳ thủ bên ${winnerColor === 'red' ? 'Đỏ' : 'Đen'} giành chiến thắng (${endReason}).`
-      : 'Trận đấu đã bị huỷ.';
+      : endReason === 'DRAW_PLY_LIMIT'
+        ? 'Ván cờ hoà (đạt giới hạn số nước).'
+        : 'Trận đấu đã bị huỷ.';
 
     this.broadcastToRoom(room.code, {
       type: 'matchEnded',

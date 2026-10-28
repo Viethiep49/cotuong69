@@ -11,7 +11,13 @@
 const { ROWS, COLS } = require('../../../../domain/rules/board');
 const { isLegalMove, applyMove, opponentOf } = require('../../../../domain/rules/moveGenerator');
 const { GAME_STATUS, getGameStatus } = require('../../../../domain/rules/gameStatus');
-const { PVE_MATCH_STATUS, resultForPlayer } = require('../../../../domain/entities/PveMatch');
+const {
+  PVE_MATCH_STATUS,
+  PVE_RESULT,
+  PVE_END_REASON,
+  resultForPlayer,
+} = require('../../../../domain/entities/PveMatch');
+const { MAX_PLY_PER_MATCH } = require('../../../../domain/rules/matchLimits');
 const { AppError, ERROR_CODES } = require('../../../../core/errors/AppError');
 const { makeFinishPveMatch } = require('./finishPveMatch');
 
@@ -123,6 +129,16 @@ function makeApplyAndPersistMove({
         endReason: gameStatus.status,
       });
       return { match: finishedMatch, move: savedMove, gameStatus };
+    }
+
+    // REV-13: vượt giới hạn số nước đi mà chưa phân thắng bại -> ván HOÀ (giống PvP).
+    // Chiếu bí / hết nước ở nước cuối vẫn được ưu tiên (xử lý ở trên).
+    if (match.ply + 1 >= MAX_PLY_PER_MATCH) {
+      const { match: drawnMatch } = await finishPveMatch(match.id, {
+        result: PVE_RESULT.DRAW,
+        endReason: PVE_END_REASON.DRAW_PLY_LIMIT,
+      });
+      return { match: drawnMatch, move: savedMove, gameStatus };
     }
 
     return {

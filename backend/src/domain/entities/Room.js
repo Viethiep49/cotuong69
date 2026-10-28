@@ -1,5 +1,5 @@
 // BE-20: giới hạn số nước đi của một ván -> quá thì xử hoà (tránh ván vô hạn).
-const MAX_PLY = Number(process.env.MAX_PLY_PER_MATCH || 300);
+const { MAX_PLY_PER_MATCH: MAX_PLY } = require('../rules/matchLimits');
 
 const { createInitialBoard } = require('../rules/board');
 const { createInitialArmy } = require('./cot615Match');
