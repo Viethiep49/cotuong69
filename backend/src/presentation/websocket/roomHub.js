@@ -1294,6 +1294,8 @@ class RoomHub {
       winnerUserId: winnerUser ? winnerUser.id : null,
       loserUserId: loserUser ? loserUser.id : null,
       winner: winnerColor || null,
+      // REV-06: PgPvpMatchRepository.create đọc `winnerColor` (cột winner_color)
+      winnerColor: winnerColor || null,
       endReason,
       winnerEloChange: winnerElo.change,
       loserEloChange: loserElo.change,

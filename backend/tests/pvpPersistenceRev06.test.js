@@ -58,6 +58,8 @@ describe('REV-06: pvp_matches được ghi mặc định', () => {
     const rows = await db.query('SELECT * FROM pvp_matches WHERE room_code = $1', [room.code]);
     assert.equal(rows.rows.length, 1, 'phải ghi đúng 1 dòng pvp_matches');
     assert.equal(rows.rows[0].end_reason, 'CHECKMATE');
+    // winner_color phải được ghi đúng (trước đây luôn null do sai tên trường)
+    assert.equal(rows.rows[0].winner_color, 'red');
 
     if (typeof hub.close === 'function') hub.close();
   });
