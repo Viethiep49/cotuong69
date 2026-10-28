@@ -15,6 +15,10 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { PveApiService, PveGameController, PVE_COLORS } = require('../js/pve.js');
+const { installFakePveBackend } = require('./helpers/fakePveBackend.js');
+
+// FE-10: PveApiService gọi API thật -> test dùng máy chủ giả khớp hợp đồng backend (qua fetch)
+const fakeBackend = installFakePveBackend();
 
 describe('Nghiệm thu Task COT-639: Code logic tương tác với AI', () => {
 
@@ -72,7 +76,7 @@ describe('Nghiệm thu Task COT-639: Code logic tương tác với AI', () => {
 
       await controller.startMatch({ playerColor: 'red' });
       // Người chơi Đỏ thực hiện 1 nước đi hợp lệ
-      await controller.makePlayerMove({ from: 'b2', to: 'e2' });
+      await controller.makePlayerMove({ from: { row: 2, col: 1 }, to: { row: 2, col: 4 } });
 
       // Bây giờ tới lượt máy -> Bàn cờ phải khóa hoặc sau khi bot đi xong mở lại
       const snap = controller.getSnapshot();
@@ -102,29 +106,22 @@ describe('Nghiệm thu Task COT-639: Code logic tương tác với AI', () => {
 
   // AC 4 & AC 5: Cập nhật nước đi sau khi máy chủ xác nhận & Giao diện không tự tính nước máy
   describe('AC 4 & AC 5: Chỉ cập nhật sau khi máy chủ xác nhận & Không tự tính nước máy', () => {
-    test('AC 4.1: Nước đi của máy chỉ được cập nhật sau khi fetchBotMove từ máy chủ hoàn thành', async () => {
+    test('AC 4.1: Nước đi của máy chỉ được cập nhật theo phản hồi của máy chủ (cùng response với nước người chơi)', async () => {
       const api = new PveApiService();
       const createRes = await api.createPveMatch({ playerColor: 'red' });
       const matchId = createRes.match.id;
 
-      // Người chơi đi nước đầu tiên
-      await api.submitMove(matchId, { from: 'b2', to: 'e2' });
-      const afterPlayerMove = api.getCurrentMatch();
-      assert.strictEqual(afterPlayerMove.ply, 1);
-      assert.strictEqual(afterPlayerMove.sideToMove, 'black');
+      // FE-10: không còn fetchBotMove/giả lập ở client; máy chủ lưu nước người, cho máy đi ngay và trả cả hai
+      assert.strictEqual(api.fetchBotMove, undefined, 'Client không có hàm tự gọi/tính nước máy');
+      const res = await api.submitMove(matchId, { from: { row: 2, col: 1 }, to: { row: 2, col: 4 } });
+      assert.strictEqual(res.success, true);
+      assert.strictEqual(res.playerMove.actor, 'PLAYER');
+      assert.ok(res.botMove, 'Máy chủ trả về nước đi chính thức của bot');
+      assert.strictEqual(res.botMove.actor, 'BOT');
 
-      // Máy chưa đi -> Bàn cờ chưa có nước của máy
-      assert.strictEqual(afterPlayerMove.lastMove.side, 'red');
-
-      // Gọi máy chủ xử lý nước đi của máy
-      const botRes = await api.fetchBotMove(matchId);
-      assert.strictEqual(botRes.success, true);
-      assert.ok(botRes.move, 'Máy chủ trả về nước đi chính thức của bot');
-
-      const afterBotMove = api.getCurrentMatch();
-      assert.strictEqual(afterBotMove.ply, 2, 'Ply tăng lên sau khi máy chủ xác nhận');
-      assert.strictEqual(afterBotMove.lastMove.side, 'black', 'Nước đi gần nhất thuộc về bot');
-      assert.strictEqual(afterBotMove.sideToMove, 'red', 'Đổi lượt lại cho người chơi');
+      const after = api.getCurrentMatch();
+      assert.strictEqual(after.ply, 2, 'Ply tăng lên sau khi máy chủ xác nhận cả hai nước');
+      assert.strictEqual(after.sideToMove, 'red', 'Đổi lượt lại cho người chơi');
     });
 
     test('AC 5.1: Giao diện React component PveBotStatusBanner hiển thị đúng vai trò thông báo', () => {

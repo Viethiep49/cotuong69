@@ -35,63 +35,57 @@ export function usePveGame(initialMatch = null) {
   }, [match?.status]);
 
   // Xử lý khi bắt đầu ván mới
+  // FE-10: người chơi cầm Đen thì máy chủ đã đi nước đầu của máy ngay khi tạo trận (kèm trong phản hồi)
   const startMatch = useCallback(async ({ playerColor }) => {
     setErrorMessage('');
     setIsResultModalOpen(false);
     setIsResignModalOpen(false);
-    const res = await pveApi.createPveMatch({ playerColor });
-    if (res.success) {
-      setMatch(res.match);
-      // Nếu người chơi chọn Đen -> Máy là Đỏ đi trước -> Kích hoạt lượt máy ngay
-      if (res.match.playerColor === PVE_COLORS.BLACK && res.match.sideToMove === PVE_COLORS.RED) {
-        triggerBotMove(res.match.id);
-      }
-    }
-    return res;
-  }, [pveApi]);
-
-  // Kích hoạt lượt máy (chờ phản hồi chính thức từ máy chủ)
-  const triggerBotMove = useCallback(async (matchId) => {
-    setIsBotThinking(true);
-    setErrorMessage('');
+    setIsBotThinking(playerColor === PVE_COLORS.BLACK);
     try {
-      const res = await pveApi.fetchBotMove(matchId);
+      const res = await pveApi.createPveMatch({ playerColor });
       if (res.success) {
         setMatch(res.match);
       }
-    } catch (err) {
-      setErrorMessage(err.message || 'Lỗi khi nhận nước đi từ máy');
+      return res;
     } finally {
       setIsBotThinking(false);
     }
   }, [pveApi]);
 
   // Người chơi thực hiện nước đi
+  // FE-10: máy chủ lưu nước của người, cho máy đi lại ngay và trả về trạng thái cuối cùng
   const makeMove = useCallback(async ({ from, to }) => {
     if (isBoardLocked) {
       return { accepted: false, error: 'Bàn cờ đang bị khóa hoặc trận đấu đã kết thúc.' };
     }
 
     setMovePending(true);
+    setIsBotThinking(true);
     setErrorMessage('');
     try {
       const res = await pveApi.submitMove(match.id, { from, to });
       if (res.success) {
         setMatch(res.match);
-        // Sau khi người chơi đi xong, tới lượt máy -> Gọi máy chủ tính nước máy
-        if (res.match.status === 'PLAYING' && res.match.sideToMove === res.match.botColor) {
-          triggerBotMove(res.match.id);
-        }
-        return { accepted: true, match: res.match };
+        return { accepted: true, match: res.match, botMove: res.botMove };
       }
       return { accepted: false };
     } catch (err) {
       setErrorMessage(err.message);
+      // Trận có thể đã bị máy chủ kết thúc (vd. hết giờ) -> đồng bộ lại trạng thái thật
+      if (err.code === 'MATCH_FINISHED' || err.code === 'MOVE_CONFLICT' || err.code === 'NOT_YOUR_TURN') {
+        try {
+          const fresh = await pveApi.getMatch(match.id);
+          if (fresh.success) setMatch(fresh.match);
+        } catch {
+          /* giữ nguyên lỗi gốc */
+        }
+      }
       return { accepted: false, error: err.message };
     } finally {
       setMovePending(false);
+      setIsBotThinking(false);
     }
-  }, [isBoardLocked, match, pveApi, triggerBotMove]);
+  }, [isBoardLocked, match, pveApi]);
 
   // Mở hộp thoại xác nhận xin thua
   const openResignModal = useCallback(() => {

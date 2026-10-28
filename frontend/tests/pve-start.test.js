@@ -15,6 +15,10 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { PveApiService, PVE_COLORS } = require('../js/pve.js');
+const { installFakePveBackend } = require('./helpers/fakePveBackend.js');
+
+// FE-10: PveApiService gọi API thật -> test dùng máy chủ giả khớp hợp đồng backend (qua fetch)
+const fakeBackend = installFakePveBackend();
 
 describe('Nghiệm thu Task COT-638: Dựng giao diện bắt đầu trận đấu PvE', () => {
 
@@ -40,7 +44,11 @@ describe('Nghiệm thu Task COT-638: Dựng giao diện bắt đầu trận đ�
       assert.ok(res.match);
       assert.strictEqual(res.match.playerColor, 'black');
       assert.strictEqual(res.match.botColor, 'red');
-      assert.strictEqual(res.match.sideToMove, 'red', 'Bên Đỏ (máy) đi trước');
+      // FE-10: máy chủ cho máy (Đỏ, đi trước) đi nước đầu NGAY khi tạo trận và trả kèm botMove
+      assert.ok(res.botMove, 'Máy chủ trả nước đi đầu tiên của máy');
+      assert.strictEqual(res.botMove.side, 'red', 'Bên Đỏ (máy) đi trước');
+      assert.strictEqual(res.match.ply, 1);
+      assert.strictEqual(res.match.sideToMove, 'black', 'Máy đã đi xong, tới lượt người chơi cầm Đen');
       assert.strictEqual(res.match.status, 'PLAYING');
     });
 

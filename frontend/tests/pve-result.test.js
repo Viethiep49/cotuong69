@@ -22,6 +22,10 @@ const {
   PVE_END_REASONS,
   PVE_END_REASON_LABELS
 } = require('../js/pve.js');
+const { installFakePveBackend } = require('./helpers/fakePveBackend.js');
+
+// FE-10: PveApiService gọi API thật -> test dùng máy chủ giả khớp hợp đồng backend (qua fetch)
+const fakeBackend = installFakePveBackend();
 
 describe('COT-640: Thao tác Đầu hàng (Xin thua) & Popup Kết quả PvE', () => {
 
@@ -89,11 +93,10 @@ describe('COT-640: Thao tác Đầu hàng (Xin thua) & Popup Kết quả PvE', (
     const api = new PveApiService();
     const { match } = await api.createPveMatch({ playerColor: PVE_COLORS.RED });
 
-    // Kiểm tra kết quả WIN do Chiếu bí (CHECKMATE)
-    const winRes = await api.finishMatch(match.id, {
-      result: PVE_RESULTS.WIN,
-      endReason: PVE_END_REASONS.CHECKMATE
-    });
+    // FE-10: kết quả do MÁY CHỦ chốt (client không còn finishMatch tự đặt kết quả)
+    assert.strictEqual(api.finishMatch, undefined, 'Client không được tự kết thúc trận');
+    fakeBackend.forceFinish(match.id, PVE_RESULTS.WIN, PVE_END_REASONS.CHECKMATE);
+    const winRes = await api.getMatch(match.id);
     assert.equal(winRes.match.result, 'WIN');
     assert.equal(PVE_RESULT_LABELS[winRes.match.result], 'Chiến Thắng');
     assert.equal(PVE_END_REASON_LABELS[winRes.match.endReason], 'Chiếu bí');

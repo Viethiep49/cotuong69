@@ -31,10 +31,13 @@
  * Lưu nước đi một cách nguyên tử: cập nhật bàn cờ, đổi lượt, tăng ply, đặt lại thời điểm
  * bắt đầu lượt (turnStartedAt = now) và ghi pve_moves
  * CHỈ KHI trận đang PLAYING và ply hiện tại đúng bằng expectedPly. Ngược lại không ghi gì.
+ * FE-10: nếu có `outcome` ({ status: 'FINISHED', result, endReason, finishedAt }) thì việc kết thúc
+ * trận (status/result/end_reason/finished_at) được ghi trong CÙNG transaction với nước đi.
  * @param {{ matchId: number, expectedPly: number, board: Array, sideToMove: string,
  *           move: { side: string, actor: string, pieceType: string, from: Square, to: Square,
  *                   capturedType: string|null },
- *           now: string }} data
+ *           now: string,
+ *           outcome?: { status: 'FINISHED', result: string, endReason: string, finishedAt: string } }} data
  * @returns {Promise<boolean>} true nếu đã lưu, false nếu trạng thái trận đã thay đổi
  *
  * @function listMoves
@@ -54,6 +57,16 @@
  * @param {number} userId
  * @param {{ status?: 'PLAYING'|'FINISHED', limit?: number, offset?: number }} [options]
  * @returns {Promise<object[]>}
+ *
+ * @function countPlayingByUser
+ * FE-10: số trận đang PLAYING của người chơi (giới hạn số trận đồng thời).
+ * @param {number} userId
+ * @returns {Promise<number>}
+ *
+ * @function listPlaying
+ * FE-10: các trận đang PLAYING (không kèm bàn cờ), cũ nhất trước, cho sweeper.
+ * @param {{ limit?: number }} [options]
+ * @returns {Promise<object[]>}
  */
 const PVE_MATCH_REPOSITORY_METHODS = Object.freeze([
   'create',
@@ -62,6 +75,8 @@ const PVE_MATCH_REPOSITORY_METHODS = Object.freeze([
   'listMoves',
   'finish',
   'listByUser',
+  'countPlayingByUser',
+  'listPlaying',
 ]);
 
 module.exports = { PVE_MATCH_REPOSITORY_METHODS };

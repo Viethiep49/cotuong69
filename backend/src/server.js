@@ -16,6 +16,9 @@ const { createAuthHandler } = require('./presentation/http/routes/auth.routes');
 const { createUserHandler } = require('./presentation/http/routes/user.routes');
 const { createRoomHandler } = require('./presentation/http/routes/room.routes');
 const { createFriendsHandler } = require('./presentation/http/routes/friends.routes');
+const { createPveHandler } = require('./presentation/http/routes/pve.routes');
+const { createPveService } = require('./application/use-cases/game/pve/pveService');
+const { createPveSweeper } = require('./application/use-cases/game/pve/pveSweeper');
 const { roomHub: defaultRoomHub, WS_SUBPROTOCOL } = require('./presentation/websocket/roomHub');
 const { DemoCallRelay, isCallMessageType } = require('./presentation/websocket/demoCallRelay');
 const { DemoChatRelay, isChatMessageType } = require('./presentation/websocket/demoChatRelay');
@@ -103,6 +106,11 @@ function createServer(options = {}) {
   const userHandler = options.userHandler || createUserHandler(options.userOptions);
   const roomHandler = options.roomHandler || createRoomHandler(options.roomOptions);
   const friendsHandler = options.friendsHandler || createFriendsHandler(options.friendsOptions);
+  // FE-10: API chơi với máy + sweeper (máy đi bù / xử hết giờ). Sweeper chỉ chạy khi gọi
+  // server.pveSweeper.start() (lúc khởi động thật) để test không phải đụng DB.
+  const pveService = options.pveService || createPveService(options.pveOptions);
+  const pveHandler = options.pveHandler || createPveHandler({ service: pveService, ...options.pveHandlerOptions });
+  const pveSweeper = options.pveSweeper || createPveSweeper({ service: pveService, ...options.pveSweeperOptions });
 
   const routeRequest = (req, res) => {
     let pathname = '';
@@ -125,6 +133,9 @@ function createServer(options = {}) {
     }
     if (pathname.startsWith('/api/friends')) {
       return friendsHandler(req, res);
+    }
+    if (pathname.startsWith('/api/pve')) {
+      return pveHandler(req, res);
     }
     if (pathname.startsWith('/uploads/')) {
       return serveUpload(pathname, res);
@@ -379,8 +390,10 @@ function createServer(options = {}) {
   const clockTimer = setInterval(broadcastState, 1000);
   clockTimer.unref();
 
+  server.pveSweeper = pveSweeper;
   server.on('close', () => {
     clearInterval(clockTimer);
+    pveSweeper.stop();
     callRelay.close();
     // BE-07: dọn heartbeat/timer của roomHub khi server đóng
     if (roomHub && typeof roomHub.close === 'function') roomHub.close();
@@ -409,6 +422,7 @@ if (require.main === module) {
     console.warn('[OAuth] MOCK OAUTH ĐANG BẬT — chỉ dùng cho dev/demo');
   }
 
+  server.pveSweeper.start(); // FE-10: máy đi bù / xử hết giờ cho trận PvE bỏ dở
   server.listen(port, '127.0.0.1', () => {
     console.log(`Match API listening on http://localhost:${port}`);
     console.log('Development match: GET /api/matches/COT-615; WebSocket /api/matches/COT-615/ws');

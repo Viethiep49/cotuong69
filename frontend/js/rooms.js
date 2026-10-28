@@ -649,6 +649,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const pveStartSpinner = document.getElementById('pveStartSpinner');
     const pveStartBtnText = document.getElementById('pveStartBtnText');
 
+    // FE-10: instance PveApiService DUY NHẤT của trang (tạo trận, đi quân, xin thua đều dùng chung)
+    let pveSharedApi = null;
+    function getPveApi() {
+      if (!pveSharedApi && typeof window.PveApiService === 'function') {
+        pveSharedApi = new window.PveApiService();
+      }
+      return pveSharedApi;
+    }
+
     function openPveModal() {
       if (!pveStartModal) return;
       if (pveStartError) {
@@ -704,12 +713,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pveStartError) pveStartError.style.display = 'none';
 
         try {
-          const pveApi = (typeof window.PveApiService === 'function')
-            ? new window.PveApiService()
-            : null;
-
+          // FE-10: MỘT instance dùng chung cho tạo trận / xin thua (không tạo instance tạm)
+          const pveApi = getPveApi();
           if (!pveApi) {
             throw new Error('Hệ thống máy chủ PvE chưa sẵn sàng.');
+          }
+          if (apiService.getCurrentUser && !apiService.getCurrentUser()) {
+            throw new Error('Bạn cần đăng nhập để chơi với máy.');
           }
 
           const response = await pveApi.createPveMatch({ playerColor: selectedColor });
@@ -759,7 +769,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const pveResultNewGameBtn = document.getElementById('pveResultNewGameBtn');
 
     let currentPveMatch = null;
-    let pveSharedApi = (typeof window.PveApiService === 'function') ? new window.PveApiService() : null;
 
     function openPveResignModal() {
       if (!pveResignConfirmModal) return;
@@ -811,6 +820,7 @@ document.addEventListener('DOMContentLoaded', () => {
         STALEMATE: 'Hết nước đi',
         TIMEOUT: 'Hết thời gian',
         RESIGN: 'Đầu hàng',
+        DRAW_PLY_LIMIT: 'Hết giới hạn số nước đi',
       };
       if (pveResultReason) {
         pveResultReason.textContent = reasonLabels[match.endReason] || 'Kết thúc ván đấu';
@@ -855,31 +865,31 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pveResignError) pveResignError.style.display = 'none';
 
         try {
-          if (!pveSharedApi) pveSharedApi = new window.PveApiService();
-          const matchId = currentPveMatch ? currentPveMatch.id : 'pve-current';
+          const pveApi = getPveApi();
+          if (!pveApi || !currentPveMatch) {
+            throw new Error('Không có ván đấu nào đang diễn ra để xin thua.');
+          }
           let response;
           try {
-            response = await pveSharedApi.resignMatch(matchId);
-          } catch {
-            // Nếu chưa có match trong map bộ nhớ, tạo kết quả resign mặc định
-            response = {
-              success: true,
-              match: {
-                id: matchId,
-                status: 'FINISHED',
-                result: 'LOSS',
-                endReason: 'RESIGN',
-                playerColor: currentPveMatch?.playerColor || 'red',
-                hasEloRating: false
-              }
-            };
+            response = await pveApi.resignMatch(currentPveMatch.id);
+          } catch (resignError) {
+            // FE-10: KHÔNG tự bịa kết quả. Chỉ riêng trường hợp máy chủ báo ván đã kết thúc
+            // (vd. hết giờ trước khi bấm) thì lấy kết quả THẬT từ máy chủ; lỗi khác hiện nguyên lỗi.
+            if (resignError && resignError.code === 'MATCH_FINISHED') {
+              response = await pveApi.getMatch(currentPveMatch.id);
+            } else {
+              throw resignError;
+            }
           }
 
           if (response && response.success) {
             currentPveMatch = response.match;
             closePveResignModal();
             renderPveResultModal(response.match);
-            showToast('Bạn đã xác nhận đầu hàng ván đấu.', 'info');
+            showToast(
+              response.match.endReason === 'RESIGN' ? 'Bạn đã xác nhận đầu hàng ván đấu.' : 'Ván đấu đã kết thúc trước đó.',
+              'info'
+            );
           }
         } catch (err) {
           if (pveResignError) {
