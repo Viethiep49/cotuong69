@@ -1,9 +1,8 @@
 const defaultDb = require('../../../config/db');
+const { parseDbTimestamp } = require('../../../core/dbTimestamp');
 
-function toDate(val) {
-  if (!val) return null;
-  return val instanceof Date ? val : new Date(val);
-}
+// REV2-20: chuỗi thời gian SQLite không có múi giờ là UTC (xem core/dbTimestamp.js)
+const toDate = parseDbTimestamp;
 
 function toUser(row) {
   if (!row) return null;

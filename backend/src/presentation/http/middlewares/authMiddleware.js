@@ -1,4 +1,5 @@
 const { verifyAccessToken } = require('../../../application/services/tokenService');
+const { parseDbTimestamp } = require('../../../core/dbTimestamp');
 
 function authenticateRequest(request, options = {}) {
   const authHeader = request.headers['authorization'] || request.headers['Authorization'] || '';
@@ -50,7 +51,8 @@ async function ensureSessionActive(decoded, repo) {
 
   const changedAt = user.passwordChangedAt || user.password_changed_at;
   if (changedAt && decoded.iat) {
-    const changedMs = new Date(changedAt).getTime();
+    // REV2-20: password_changed_at thô từ SQLite là chuỗi UTC không múi giờ
+    const changedMs = parseDbTimestamp(changedAt).getTime();
     // Trừ 1 giây tolerance vì iat được làm tròn xuống giây
     if (Number.isFinite(changedMs) && decoded.iat * 1000 < changedMs - 1000) {
       const err = new Error('Phiên đăng nhập đã hết hiệu lực do mật khẩu vừa được thay đổi. Vui lòng đăng nhập lại.');
