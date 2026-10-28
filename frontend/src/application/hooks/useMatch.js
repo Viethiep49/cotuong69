@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchMatch, matchWebSocketUrl } from '../../infrastructure/api/matchApi';
+import { fetchMatch, matchWebSocketProtocols, matchWebSocketUrl } from '../../infrastructure/api/matchApi';
 import { ReconnectManager } from '../../domain/network/reconnectManager';
 import { BoardSyncManager } from '../../domain/game/boardSyncManager';
 
@@ -120,7 +120,8 @@ export function useMatch(matchId) {
         if (cancelled) return;
         setState((current) => ({ ...current, match, loading: false, error: null }));
 
-        socket = new WebSocket(matchWebSocketUrl(matchId));
+        // FE-06: token gửi qua Sec-WebSocket-Protocol thay vì query string
+        socket = new WebSocket(matchWebSocketUrl(matchId), matchWebSocketProtocols());
         socketRef.current = socket;
         socket.addEventListener('open', () => {
           if (!cancelled) {

@@ -298,43 +298,45 @@ function App() {
                 </span>
               </label>
 
-              {/* COT-601: Công cụ kiểm thử giả lập Mạng & Đối thủ */}
-              <div className="simulation-tools-group">
-                <span className="simulation-title">Kiểm thử mạng (COT-601)</span>
-                <button
-                  type="button"
-                  className="btn-sim"
-                  onClick={() => {
-                    if (reconnectState.selfDisconnected) simulateSelfReconnect();
-                    else simulateSelfDisconnect();
-                  }}
-                >
-                  {reconnectState.selfDisconnected ? '✓ Kết nối lại bản thân' : '⚡ Giả lập mất mạng bản thân'}
-                </button>
-                <button
-                  type="button"
-                  className="btn-sim"
-                  onClick={() => {
-                    if (reconnectState.opponentDisconnected) simulateOpponentReconnect();
-                    else simulateOpponentDisconnect(60);
-                  }}
-                >
-                  {reconnectState.opponentDisconnected ? '✓ Đối thủ kết nối lại' : '⚠️ Giả lập đối thủ mất mạng (60s)'}
-                </button>
-                <button
-                  type="button"
-                  className="btn-sim"
-                  onClick={() => {
-                    simulateServerMatchResult({
-                      winner: color || 'red',
-                      winnerColor: color || 'red',
-                      reason: 'DISCONNECT_TIMEOUT',
-                    });
-                  }}
-                >
-                  🏆 Máy chủ chốt kết quả (Timeout)
-                </button>
-              </div>
+              {/* FE-06: công cụ giả lập chỉ có ở bản dev, không lọt vào bản build production */}
+              {import.meta.env.DEV && (
+                <div className="simulation-tools-group">
+                  <span className="simulation-title">Kiểm thử mạng (COT-601)</span>
+                  <button
+                    type="button"
+                    className="btn-sim"
+                    onClick={() => {
+                      if (reconnectState.selfDisconnected) simulateSelfReconnect();
+                      else simulateSelfDisconnect();
+                    }}
+                  >
+                    {reconnectState.selfDisconnected ? '✓ Kết nối lại bản thân' : '⚡ Giả lập mất mạng bản thân'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-sim"
+                    onClick={() => {
+                      if (reconnectState.opponentDisconnected) simulateOpponentReconnect();
+                      else simulateOpponentDisconnect(60);
+                    }}
+                  >
+                    {reconnectState.opponentDisconnected ? '✓ Đối thủ kết nối lại' : '⚠️ Giả lập đối thủ mất mạng (60s)'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-sim"
+                    onClick={() => {
+                      simulateServerMatchResult({
+                        winner: color || 'red',
+                        winnerColor: color || 'red',
+                        reason: 'DISCONNECT_TIMEOUT',
+                      });
+                    }}
+                  >
+                    🏆 Máy chủ chốt kết quả (Timeout)
+                  </button>
+                </div>
+              )}
             </div>
           </details>
         </div>

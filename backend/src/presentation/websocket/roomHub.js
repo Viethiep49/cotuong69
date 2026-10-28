@@ -37,6 +37,46 @@ function isSameCall(payload, room) {
   return String(payload.callId) === String(room.videoCall.callId);
 }
 
+// FE-06: trình duyệt không gắn được header Authorization cho WebSocket, và token trong
+// query string bị lộ vào log/lịch sử. Client gửi token qua Sec-WebSocket-Protocol:
+//   new WebSocket(url, ['cotuong.v1', 'access_token.<jwt>'])
+// Server chọn 'cotuong.v1' làm subprotocol trả về (không bao giờ echo lại token).
+const WS_SUBPROTOCOL = 'cotuong.v1';
+const WS_TOKEN_PROTOCOL_PREFIX = 'access_token.';
+
+function parseProtocolHeader(header) {
+  const raw = Array.isArray(header) ? header.join(',') : String(header || '');
+  return raw.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+/**
+ * FE-06: lấy access token từ yêu cầu upgrade. Ưu tiên:
+ *  1. Sec-WebSocket-Protocol: access_token.<jwt>
+ *  2. Header Authorization: Bearer <jwt> (client không phải trình duyệt)
+ *  3. Query ?token= — chỉ chấp nhận ngoài production (tương thích test/công cụ dev)
+ */
+function extractWsToken(request, urlObj) {
+  const headers = (request && request.headers) || {};
+  const protocols = parseProtocolHeader(headers['sec-websocket-protocol']);
+  const tokenProtocol = protocols.find((item) => item.startsWith(WS_TOKEN_PROTOCOL_PREFIX));
+  if (tokenProtocol) {
+    const token = tokenProtocol.slice(WS_TOKEN_PROTOCOL_PREFIX.length);
+    if (token) return token;
+  }
+
+  const authHeader = headers['authorization'] || headers['Authorization'] || '';
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7).trim();
+    if (token) return token;
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    const queryToken = urlObj.searchParams.get('token');
+    if (queryToken) return queryToken;
+  }
+  return null;
+}
+
 class RoomHub {
   constructor({
     roomManager = defaultRoomManager,
@@ -78,7 +118,12 @@ class RoomHub {
     this.reconnectCountdownSeconds = Number(reconnectCountdownSeconds);
 
     // BE-07: giới hạn payload 64KB (trước đây mặc định 100MB)
-    this.wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+    // FE-06: chọn subprotocol 'cotuong.v1' (nếu client có gửi Sec-WebSocket-Protocol)
+    this.wss = new WebSocketServer({
+      noServer: true,
+      maxPayload: 64 * 1024,
+      handleProtocols: (protocols) => (protocols.has(WS_SUBPROTOCOL) ? WS_SUBPROTOCOL : false),
+    });
 
     // Ánh xạ ConnectionId <-> UserId và Socket metadata
     this.clients = new Map(); // socket -> { connectionId, userId, user, roomCode, role, side, lastSeen, lastPong, connectedAt }
@@ -335,13 +380,8 @@ class RoomHub {
       }
     }
 
-    let token = urlObj.searchParams.get('token');
-    if (!token) {
-      const authHeader = request.headers['authorization'] || request.headers['Authorization'] || '';
-      if (authHeader.startsWith('Bearer ')) {
-        token = authHeader.slice(7).trim();
-      }
-    }
+    // FE-06: token qua Sec-WebSocket-Protocol / Authorization; query chỉ ngoài production
+    const token = extractWsToken(request, urlObj);
 
     if (!token) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -1670,4 +1710,8 @@ module.exports = {
   isValidSdp,
   isValidCandidate,
   isSameCall,
+  // FE-06
+  extractWsToken,
+  WS_SUBPROTOCOL,
+  WS_TOKEN_PROTOCOL_PREFIX,
 };

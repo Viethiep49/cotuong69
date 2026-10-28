@@ -16,7 +16,7 @@ const { createAuthHandler } = require('./presentation/http/routes/auth.routes');
 const { createUserHandler } = require('./presentation/http/routes/user.routes');
 const { createRoomHandler } = require('./presentation/http/routes/room.routes');
 const { createFriendsHandler } = require('./presentation/http/routes/friends.routes');
-const { roomHub: defaultRoomHub } = require('./presentation/websocket/roomHub');
+const { roomHub: defaultRoomHub, WS_SUBPROTOCOL } = require('./presentation/websocket/roomHub');
 const { getClientIp, roomLookupLimiter } = require('./presentation/http/middlewares/rateLimiter');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -53,7 +53,12 @@ function createServer(options = {}) {
   const now = options.now || (() => Date.now());
   const clients = new Map();
   // BE-07: giới hạn payload 64KB cho WS trận mẫu
-  const webSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+  // FE-06: nếu client gửi Sec-WebSocket-Protocol (kèm token) thì chỉ chọn 'cotuong.v1', không echo token
+  const webSockets = new WebSocketServer({
+    noServer: true,
+    maxPayload: 64 * 1024,
+    handleProtocols: (protocols) => (protocols.has(WS_SUBPROTOCOL) ? WS_SUBPROTOCOL : false),
+  });
   const roomHub = options.roomHub || defaultRoomHub;
   // REV-19: chỉ trận do server tạo (không phải match test truyền vào) mới tự reset ván mới
   const autoResetMatch = !options.match;
