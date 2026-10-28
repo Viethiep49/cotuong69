@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-576:
  * Đặt lại mật khẩu (Reset Password) dựa trên OTP/Token
@@ -14,10 +15,10 @@ const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
 const PgPasswordResetRepository = require('../src/infrastructure/database/repositories/PgPasswordResetRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
-const LoginUserUseCase = require('../src/application/useCases/loginUser');
-const ForgotPasswordUseCase = require('../src/application/useCases/forgotPassword');
-const ResetPasswordUseCase = require('../src/application/useCases/resetPassword');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
+const ForgotPasswordUseCase = require('../src/application/use-cases/auth/forgotPassword');
+const ResetPasswordUseCase = require('../src/application/use-cases/auth/resetPassword');
 const emailService = require('../src/infrastructure/mailer/emailService');
 const { createServer } = require('../src/server');
 
@@ -163,10 +164,12 @@ describe('Nghiệm thu Task COT-576: Đặt lại mật khẩu dựa trên OTP/T
       const user = await userRepo.findByUsername('reset_tester');
       const pastTime = new Date(Date.now() - 60 * 1000).toISOString();
 
+      // BE-02: DB chỉ lưu SHA-256 của token
+      const { hashToken } = require('../src/infrastructure/database/repositories/PgPasswordResetRepository');
       await db.query(
         `INSERT INTO password_reset_tokens (token, user_id, expires_at, is_used)
          VALUES ($1, $2, $3, $4)`,
-        [expiredToken, user.id, pastTime, 0]
+        [hashToken(expiredToken), user.id, pastTime, 0]
       );
 
       await assert.rejects(

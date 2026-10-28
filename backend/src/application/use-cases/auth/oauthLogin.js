@@ -1,0 +1,216 @@
+const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
+const PgOAuthRepository = require('../../../infrastructure/database/repositories/PgOAuthRepository');
+const OAuthVerifierService = require('../../services/oauthService');
+const defaultDb = require('../../../config/db');
+const { generateAccessToken } = require('../../services/tokenService');
+const { sanitizeRedirectUrl } = require('./loginUser');
+const { validateDisplayName } = require('../../../domain/validators/profileValidator');
+const { classifyUniqueViolation, UNIQUE_VIOLATION_MESSAGES } = require('../../../core/uniqueViolation');
+
+// REV2-25: số lần thử lại khi tên đăng nhập tự sinh bị người khác chiếm đúng lúc (race)
+const MAX_USERNAME_RACE_RETRIES = 3;
+
+/**
+ * REV-15: tên hiển thị lấy từ Google phải qua validateDisplayName; không hợp lệ
+ * thì dùng phần trước "@" của email.
+ */
+function resolveDisplayName(profile) {
+  const result = validateDisplayName(profile.name);
+  if (result.isValid) return result.cleanName;
+  const localPart = String(profile.email || '').split('@')[0].replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return localPart.slice(0, 50) || 'player';
+}
+
+class OAuthLoginUseCase {
+  constructor({
+    userRepository = new PgUserRepository(),
+    oauthRepository = new PgOAuthRepository(),
+    oauthVerifier = new OAuthVerifierService(),
+    tokenService = { generateAccessToken },
+    db = defaultDb,
+  } = {}) {
+    this.db = db;
+    this.userRepository = userRepository;
+    this.oauthRepository = oauthRepository;
+    this.oauthVerifier = oauthVerifier;
+    this.tokenService = tokenService;
+  }
+
+  async execute({ provider, credential, token, redirectUrl }) {
+    const rawToken = credential || token;
+    if (!rawToken || typeof rawToken !== 'string' || !rawToken.trim()) {
+      const err = new Error(`Vui lòng cung cấp mã xác thực cho ${provider}.`);
+      err.code = 'VALIDATION_ERROR';
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const normProvider = (provider || '').toLowerCase().trim();
+    // SEC-05: Facebook đã bị bỏ; chỉ còn Google (tuỳ chọn)
+    if (normProvider !== 'google') {
+      const err = new Error(`Nhà cung cấp OAuth không được hỗ trợ: ${provider}`);
+      err.code = 'UNSUPPORTED_OAUTH_PROVIDER';
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // 1. Xác thực token với bên thứ ba
+    const profile = await this.oauthVerifier.verify(normProvider, rawToken);
+
+    // 2. Kiểm tra liên kết trong oauth_identities
+    let user = null;
+    const existingIdentity = await this.oauthRepository.findByProvider(normProvider, profile.providerId);
+
+    if (existingIdentity) {
+      user = await this.userRepository.findById(existingIdentity.userId);
+    } else {
+      // SEC-05: KHÔNG tự liên kết vào tài khoản đăng nhập bằng mật khẩu chỉ vì trùng email
+      const existingUserByEmail = await this.userRepository.findByEmail(profile.email);
+      if (existingUserByEmail) {
+        const err = new Error('Email này đã được đăng ký. Vui lòng đăng nhập bằng mật khẩu.');
+        err.code = 'ACCOUNT_EXISTS_LOGIN_REQUIRED';
+        err.statusCode = 409;
+        throw err;
+      }
+
+      // 4. Tạo user + identity trong CÙNG một transaction (SEC-05)
+      user = await this.createUserWithIdentity(normProvider, profile);
+    }
+
+    if (!user) {
+      const err = new Error('Không thể tìm thấy hoặc khởi tạo người dùng.');
+      err.code = 'USER_NOT_FOUND';
+      err.statusCode = 500;
+      throw err;
+    }
+
+    if (user.status !== 'ACTIVE') {
+      const err = new Error('Tài khoản đã bị tạm khóa hoặc vô hiệu hóa.');
+      err.code = 'ACCOUNT_INACTIVE';
+      err.statusCode = 403;
+      throw err;
+    }
+
+    // 5. Cấp phát JWT Access Token (SEC-02: không đưa email vào payload)
+    const jwtToken = this.tokenService.generateAccessToken({
+      id: user.id,
+      username: user.username,
+    });
+
+    return {
+      success: true,
+      token: jwtToken,
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        email: user.email,
+        eloRating: user.eloRating,
+        avatarUrl: user.avatarUrl,
+        status: user.status,
+      },
+      // REV-15: chặn open-redirect giống đăng nhập thường
+      redirectUrl: sanitizeRedirectUrl(redirectUrl),
+    };
+  }
+
+  /**
+   * SEC-05: tạo user + oauth identity nguyên tử (rollback nếu 1 bước lỗi).
+   */
+  async createUserWithIdentity(provider, profile) {
+    // REV2-25: tên đăng nhập tự sinh được kiểm tra "còn trống" rồi mới tạo; hai lần đăng nhập OAuth
+    // song song có thể cùng chọn một tên -> DB báo UNIQUE (23505). Tên tự sinh không do người dùng
+    // chọn nên thử lại với tên kế tiếp; hết lượt thử hoặc trùng email thì trả lỗi nghiệp vụ 409.
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.createUserWithIdentityOnce(provider, profile);
+      } catch (err) {
+        const kind = classifyUniqueViolation(err);
+        if (!kind) throw err;
+        if (kind === 'USERNAME_EXISTS' && attempt < MAX_USERNAME_RACE_RETRIES) continue;
+        const error = new Error(UNIQUE_VIOLATION_MESSAGES[kind]);
+        error.code = kind;
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+  }
+
+  async createUserWithIdentityOnce(provider, profile) {
+    const baseUsername = profile.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').toLowerCase() || `${provider}_user`;
+
+    const client = this.db && typeof this.db.getClient === 'function' ? await this.db.getClient() : null;
+    if (!client) {
+      return this.createUserWithIdentitySequential(provider, profile, baseUsername);
+    }
+
+    try {
+      await client.query('BEGIN');
+      const txDb = { query: (text, params) => client.query(text, params) };
+      const txUserRepo = new PgUserRepository({ db: txDb });
+      const txOauthRepo = new PgOAuthRepository({ db: txDb });
+
+      let candidateUsername = baseUsername;
+      let counter = 1;
+      while (await txUserRepo.findByUsername(candidateUsername)) {
+        candidateUsername = `${baseUsername}_${counter++}`;
+      }
+
+      const created = await txUserRepo.create({
+        username: candidateUsername,
+        displayName: resolveDisplayName(profile),
+        email: profile.email,
+        passwordHash: null,
+        eloRating: 1000,
+        avatarUrl: profile.avatarUrl || null,
+        status: 'ACTIVE',
+      });
+
+      await txOauthRepo.create({
+        userId: created.id,
+        provider,
+        providerId: profile.providerId,
+      });
+
+      await client.query('COMMIT');
+      return created;
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async createUserWithIdentitySequential(provider, profile, baseUsername) {
+    let candidateUsername = baseUsername;
+    let counter = 1;
+    while (await this.userRepository.findByUsername(candidateUsername)) {
+      candidateUsername = `${baseUsername}_${counter++}`;
+    }
+
+    const created = await this.userRepository.create({
+      username: candidateUsername,
+      displayName: resolveDisplayName(profile),
+      email: profile.email,
+      passwordHash: null,
+      eloRating: 1000,
+      avatarUrl: profile.avatarUrl || null,
+      status: 'ACTIVE',
+    });
+
+    await this.oauthRepository.create({
+      userId: created.id,
+      provider,
+      providerId: profile.providerId,
+    });
+
+    return created;
+  }
+}
+
+module.exports = OAuthLoginUseCase;

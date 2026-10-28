@@ -1,0 +1,11 @@
+-- ====================================================================
+-- Migration: 008_unique_username_ci.sql
+-- REV-15: username phải duy nhất KHÔNG phân biệt hoa/thường (findByUsername đã so
+-- khớp theo LOWER(username) nên "Foo" và "foo" là cùng một tài khoản).
+--
+-- Nếu dữ liệu cũ đã có 2 username chỉ khác hoa/thường, câu lệnh dưới sẽ báo lỗi
+-- "could not create unique index ... Key (lower(username))=(...) is duplicated",
+-- transaction của migration rollback và KHÔNG xoá/sửa bất kỳ dữ liệu nào. Cần xử lý
+-- tay (đổi tên một trong hai tài khoản) rồi chạy lại migration.
+-- ====================================================================
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));

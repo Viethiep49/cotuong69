@@ -52,11 +52,32 @@ async function query(text, params = []) {
 /**
  * Lấy một client từ connection pool (dành cho transaction)
  */
+/**
+ * BE-19: SQLite chỉ có 1 kết nối -> dùng mutex để 2 transaction không đè nhau
+ * (trước đây getClient() trả ngay nên BEGIN/COMMIT của 2 luồng bị xen kẽ).
+ */
+let sqliteLockTail = Promise.resolve();
+
+function acquireSqliteLock() {
+  const previous = sqliteLockTail;
+  let releaseLock;
+  sqliteLockTail = new Promise((resolve) => {
+    releaseLock = resolve;
+  });
+  return previous.then(() => releaseLock);
+}
+
 async function getClient() {
   if (dbClient === 'sqlite' || sqliteDb) {
+    const releaseLock = await acquireSqliteLock();
+    let released = false;
     return {
       query: (t, p) => querySqlite(t, p),
-      release: () => {},
+      release: () => {
+        if (released) return;
+        released = true;
+        releaseLock();
+      },
     };
   }
   return await pool.connect();
@@ -89,20 +110,30 @@ function querySqlite(text, params = []) {
   }
 
   // Chuyển đổi cú pháp $1, $2 của Postgres sang ? của SQLite kèm map đúng tham số
+  // BE-01: node:sqlite không nhận kiểu boolean -> ép về 0/1
+  const normalizeParam = (value) => (value === true ? 1 : value === false ? 0 : value);
+
   const expandedParams = [];
   let sqliteText = text.replace(/\$(\d+)/g, (match, num) => {
     const index = parseInt(num, 10) - 1;
-    expandedParams.push(params[index]);
+    expandedParams.push(normalizeParam(params[index]));
     return '?';
   });
   // Chuyển đổi một số cú pháp DDL đặc thù nếu có
   sqliteText = sqliteText
     .replace(/SERIAL PRIMARY KEY/gi, 'INTEGER PRIMARY KEY AUTOINCREMENT')
     .replace(/TIMESTAMP WITH TIME ZONE/gi, 'DATETIME')
-    .replace(/BOOLEAN/gi, 'INTEGER');
+    .replace(/BOOLEAN/gi, 'INTEGER')
+    // REV-14: Postgres dùng `NOW() - make_interval(mins => $n)`; SQLite lưu created_at
+    // dạng UTC 'YYYY-MM-DD HH:MM:SS' nên so sánh với datetime('now', '-N minutes')
+    .replace(
+      /NOW\(\)\s*-\s*make_interval\(\s*mins\s*=>\s*\?\s*\)/gi,
+      "datetime('now', '-' || ? || ' minutes')"
+    );
 
   try {
-    const isSelect = /^\s*(SELECT|PRAGMA)/i.test(sqliteText);
+    // BE-02: UPDATE/INSERT ... RETURNING cũng trả về dòng -> phải dùng all()
+    const isSelect = /^\s*(SELECT|PRAGMA|WITH)/i.test(sqliteText) || /\bRETURNING\b/i.test(sqliteText);
     const stmt = sqliteDb.prepare(sqliteText);
 
     if (isSelect) {

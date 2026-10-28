@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { createEmptyBoard } = require('../src/domain/rules/board');

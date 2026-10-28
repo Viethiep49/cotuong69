@@ -180,6 +180,22 @@ class ReconnectManager {
     return this.serverResult;
   }
 
+  /**
+   * REV2-10: ván mới bắt đầu (demo tự reset sau khi kết thúc) -> bỏ kết quả của ván cũ,
+   * nếu không bàn cờ bị khoá mãi (canMakeMove() = false khi còn serverResult).
+   */
+  clearServerResult() {
+    if (!this.serverResult && !this.waitingServerResolution && !this.opponentDisconnected) return this.getState();
+    this.stopCountdownTimer();
+    this.serverResult = null;
+    this.waitingServerResolution = false;
+    this.opponentDisconnected = false;
+    this.normalClockPaused = false;
+    this.reconnectCountdown = this.maxWaitSeconds;
+    this.notify();
+    return this.getState();
+  }
+
   formatServerResultMessage(result) {
     const winnerText = result.winner ? `Kỳ thủ bên ${result.winner === 'red' ? 'Đỏ' : 'Đen'} Thắng` : 'Ván đấu Kết Thúc';
     const reasonText = (result.reason === 'DISCONNECT_TIMEOUT' || result.endReason === 'DISCONNECT_TIMEOUT')

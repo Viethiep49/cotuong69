@@ -1,5 +1,7 @@
 const EMAIL_REGEX = /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/;
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,50}$/;
+const { validateDisplayName } = require('./profileValidator');
+
 const PASSWORD_HAS_LETTER = /[A-Za-z]/;
 const PASSWORD_HAS_NUMBER = /\d/;
 
@@ -18,13 +20,10 @@ function validateRegisterInput({ username, displayName, email, password } = {}) 
     }
   }
 
-  if (!displayName || typeof displayName !== 'string' || !displayName.trim()) {
-    errors.push('Tên hiển thị không được để trống.');
-  } else {
-    const trimmed = displayName.trim();
-    if (trimmed.length < 2 || trimmed.length > 100) {
-      errors.push('Tên hiển thị phải từ 2 đến 100 ký tự.');
-    }
+  // BE-16: dùng CHUNG rule với hồ sơ (2-50 ký tự, từ cấm, không ký tự điều khiển)
+  const displayNameResult = validateDisplayName(displayName);
+  if (!displayNameResult.isValid) {
+    errors.push(displayNameResult.error);
   }
 
   if (!email || typeof email !== 'string' || !email.trim()) {
@@ -39,6 +38,10 @@ function validateRegisterInput({ username, displayName, email, password } = {}) 
   if (!password || typeof password !== 'string') {
     errors.push('Mật khẩu không được để trống.');
   } else {
+    if (Buffer.byteLength(password, 'utf8') > 72) {
+      errors.push('Mật khẩu không được dài quá 72 byte.');
+    }
+
     if (password.length < 8) {
       errors.push('Mật khẩu phải có tối thiểu 8 ký tự.');
     }

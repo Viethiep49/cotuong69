@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS pve_matches (
     board_state TEXT NOT NULL, -- JSON bàn cờ 10x9: null hoặc { type, color }
     side_to_move VARCHAR(5) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PLAYING', -- PLAYING, FINISHED
-    result VARCHAR(10), -- Theo góc nhìn người chơi: WIN, LOSS
-    end_reason VARCHAR(20), -- CHECKMATE, NO_LEGAL_MOVES, TIMEOUT, RESIGN
+    result VARCHAR(10), -- Theo góc nhìn người chơi: WIN, LOSS, DRAW (REV-13)
+    end_reason VARCHAR(20), -- CHECKMATE, NO_LEGAL_MOVES, TIMEOUT, RESIGN, DRAW_PLY_LIMIT (REV-13)
     ply INTEGER NOT NULL DEFAULT 0, -- Số nước đã đi (cả hai bên)
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -26,9 +26,9 @@ CREATE TABLE IF NOT EXISTS pve_matches (
     CONSTRAINT ck_pve_matches_distinct_colors CHECK (player_color <> bot_color),
     CONSTRAINT ck_pve_matches_side_to_move CHECK (side_to_move IN ('red', 'black')),
     CONSTRAINT ck_pve_matches_status CHECK (status IN ('PLAYING', 'FINISHED')),
-    CONSTRAINT ck_pve_matches_result CHECK (result IS NULL OR result IN ('WIN', 'LOSS')),
+    CONSTRAINT ck_pve_matches_result CHECK (result IS NULL OR result IN ('WIN', 'LOSS', 'DRAW')),
     CONSTRAINT ck_pve_matches_end_reason CHECK (
-        end_reason IS NULL OR end_reason IN ('CHECKMATE', 'NO_LEGAL_MOVES', 'TIMEOUT', 'RESIGN')
+        end_reason IS NULL OR end_reason IN ('CHECKMATE', 'NO_LEGAL_MOVES', 'TIMEOUT', 'RESIGN', 'DRAW_PLY_LIMIT')
     ),
     CONSTRAINT ck_pve_matches_ply CHECK (ply >= 0)
 );

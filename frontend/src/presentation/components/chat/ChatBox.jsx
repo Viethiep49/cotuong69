@@ -1,27 +1,41 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
+import {
+  CHAT_ACK_TIMEOUT_MS,
+  CHAT_MAX_CHARACTERS,
+  chatReducer,
+  createClientId,
+  createOutgoingMessage,
+  formatChatTime,
+} from '../../../domain/chat/chatMessages';
 
-const MAX_CHARACTERS = 255;
+const MAX_CHARACTERS = CHAT_MAX_CHARACTERS;
 
+/**
+ * FE-05: chat thật. `onSendMessage(msg)` gửi qua WebSocket và trả `true` nếu đã đưa vào socket
+ * (`false` -> hiện "Lỗi gửi"); `subscribeChat(handler)` nhận `ChatMessage` / `ChatError` từ server.
+ * Trạng thái "Đã gửi" chỉ đặt khi server phát lại tin mang đúng `clientId` (ack), không còn giả lập.
+ */
 export default function ChatBox({
   roomId = 'default-room',
-  currentUser = { id: 'usr_sang', name: 'Nguyễn Tấn Sang', avatar: '桑' },
+  currentUser = { id: 'guest', name: 'Khách', avatar: '客' },
   role = 'HOST',
   readOnly = false,
   onSendMessage = null,
+  subscribeChat = null,
 }) {
   const roleUpper = String(role || '').toUpperCase();
   // AC 2 & AC 3: Chỉ Chủ phòng và Đối thủ được xem và gửi/nhận tin nhắn. Khán giả bị ẩn hoàn toàn.
   const isChatAllowed = !readOnly && (roleUpper === 'HOST' || roleUpper === 'PLAYER' || roleUpper === 'RED' || roleUpper === 'BLACK');
 
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([
+  const [messages, dispatch] = useReducer(chatReducer, null, () => [
     {
       id: 'welcome_1',
       senderId: 'system',
       senderName: 'Hệ Thống',
       senderAvatar: '棋',
       text: 'Chúc hai kỳ thủ có một ván đấu đẹp mắt! Khung chat nội bộ chỉ hiển thị giữa hai bên thi đấu.',
-      timestamp: formatTime(new Date()),
+      timestamp: formatChatTime(new Date()),
       status: 'SENT',
       isSystem: true,
     },
@@ -32,13 +46,42 @@ export default function ChatBox({
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const isOpenRef = useRef(false);
+  isOpenRef.current = isOpen;
+  const ackTimersRef = useRef(new Map()); // clientId -> timeout chờ ack
+  const sentIdsRef = useRef(new Set()); // clientId các tin do chính mình gửi (để ack muộn không tính là tin chưa đọc)
 
-  function formatTime(date) {
-    const d = new Date(date);
-    const h = String(d.getHours()).padStart(2, '0');
-    const m = String(d.getMinutes()).padStart(2, '0');
-    return `${h}:${m}`;
-  }
+  // FE-05: nhận tin từ server (ChatMessage = tin đối thủ hoặc ack của tin mình; ChatError = bị từ chối)
+  useEffect(() => {
+    if (typeof subscribeChat !== 'function') return undefined;
+    const unsubscribe = subscribeChat((event) => {
+      if (!event) return;
+      if (event.type === 'ChatMessage') {
+        const timer = ackTimersRef.current.get(event.clientId);
+        if (timer) {
+          clearTimeout(timer);
+          ackTimersRef.current.delete(event.clientId);
+        }
+        if (!sentIdsRef.current.has(event.clientId) && !isOpenRef.current) {
+          setUnreadCount((count) => count + 1);
+        }
+        dispatch({ type: 'server', payload: event });
+      } else if (event.type === 'ChatError') {
+        dispatch({ type: 'failed' });
+        setInputError(event.message || 'Máy chủ từ chối tin nhắn.');
+      }
+    });
+    return unsubscribe;
+  }, [subscribeChat]);
+
+  // Dọn mọi bộ đếm chờ ack khi tháo khung chat
+  useEffect(() => {
+    const timers = ackTimersRef.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
 
   // AC 1: Tự động cuộn xuống dưới cùng khi có tin mới
   useEffect(() => {
@@ -88,31 +131,24 @@ export default function ChatBox({
       return;
     }
 
-    const newMsg = {
-      id: 'msg_' + Date.now(),
-      senderId: currentUser.id,
-      senderName: currentUser.name,
-      senderAvatar: currentUser.avatar || currentUser.name.slice(0, 1),
-      text: trimmed,
-      timestamp: formatTime(new Date()),
-      status: 'SENDING',
-      isSelf: true,
-    };
-
-    setMessages((prev) => [...prev, newMsg]);
+    const clientId = createClientId();
+    const newMsg = createOutgoingMessage({ clientId, text: trimmed, sender: currentUser });
+    sentIdsRef.current.add(clientId);
+    dispatch({ type: 'send', message: newMsg });
     setInputText('');
     setInputError('');
 
-    if (onSendMessage) {
-      onSendMessage(newMsg);
+    // Gửi thật; không đưa được vào socket (hoặc không có kênh) -> báo lỗi ngay
+    const accepted = typeof onSendMessage === 'function' ? onSendMessage(newMsg) : false;
+    if (accepted === false) {
+      dispatch({ type: 'failed', clientId });
+      return;
     }
-
-    // Giả lập trạng thái gửi thành công (SENT)
-    setTimeout(() => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === newMsg.id ? { ...m, status: 'SENT' } : m))
-      );
-    }, 100);
+    // Chờ ack của server; quá hạn thì coi là gửi thất bại thay vì im lặng
+    ackTimersRef.current.set(clientId, setTimeout(() => {
+      ackTimersRef.current.delete(clientId);
+      dispatch({ type: 'timeout', clientId });
+    }, CHAT_ACK_TIMEOUT_MS));
   };
 
   const handleKeyDown = (e) => {

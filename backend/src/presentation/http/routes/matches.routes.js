@@ -1,19 +1,22 @@
 const { URL } = require('node:url');
+const { corsHeaders } = require('../../../core/cors');
 const { getPublicMatchState } = require('../../../domain/entities/cot615Match');
 
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
   });
   response.end(JSON.stringify(body));
 }
 
 function createMatchesHandler({ getMatch, now = Date.now }) {
   return (request, response) => {
+    // CLEAN-05: CORS theo whitelist (thay cho Access-Control-Allow-Origin: *)
+    for (const [headerName, headerValue] of Object.entries(corsHeaders(request))) {
+      response.setHeader(headerName, headerValue);
+    }
+
     if (request.method === 'OPTIONS') {
       sendJson(response, 204, {});
       return;

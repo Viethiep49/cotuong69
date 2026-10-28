@@ -5,15 +5,24 @@
  * - Kiểm tra hợp lệ bằng engine luật dùng chung (isLegalMove đã bao gồm không tự để Tướng bị chiếu).
  * - Áp dụng nước bằng applyMove của engine, lưu bàn cờ + lịch sử nước đi, tăng ply, chuyển lượt.
  * - COT-635: sau mỗi nước (của người hoặc máy) xét trạng thái ván cho bên vừa tới lượt bằng
- *   getGameStatus; Chiếu Bí / Hết nước thì gọi luồng kết thúc trận (bên hết nước thua).
+ *   getGameStatus; Chiếu Bí / Hết nước thì bên hết nước thua.
+ * - FE-10 (atomic): trạng thái ván được tính TRƯỚC khi lưu và truyền cho saveMove qua `outcome`
+ *   ({ status, result, endReason, finishedAt }) để nước đi + kết thúc trận nằm trong CÙNG một
+ *   transaction. Trước đây nước đi được lưu rồi mới gọi finishPveMatch ở bước riêng: nếu bước 2 lỗi
+ *   (sập/DB lỗi) thì ván kẹt ở PLAYING với bàn cờ đã chiếu bí.
  * Nước không hợp lệ ném AppError và KHÔNG ghi gì xuống CSDL.
  */
 const { ROWS, COLS } = require('../../../../domain/rules/board');
 const { isLegalMove, applyMove, opponentOf } = require('../../../../domain/rules/moveGenerator');
 const { GAME_STATUS, getGameStatus } = require('../../../../domain/rules/gameStatus');
-const { PVE_MATCH_STATUS, resultForPlayer } = require('../../../../domain/entities/PveMatch');
+const {
+  PVE_MATCH_STATUS,
+  PVE_RESULT,
+  PVE_END_REASON,
+  resultForPlayer,
+} = require('../../../../domain/entities/PveMatch');
+const { MAX_PLY_PER_MATCH } = require('../../../../domain/rules/matchLimits');
 const { AppError, ERROR_CODES } = require('../../../../core/errors/AppError');
-const { makeFinishPveMatch } = require('./finishPveMatch');
 
 const GAME_OVER_STATUSES = [GAME_STATUS.CHECKMATE, GAME_STATUS.NO_LEGAL_MOVES];
 
@@ -48,13 +57,9 @@ function normalizeMove(move) {
 }
 
 /**
- * @param {{ pveMatchRepository: object, clock?: () => Date, finishPveMatch?: Function }} deps
+ * @param {{ pveMatchRepository: object, clock?: () => Date }} deps
  */
-function makeApplyAndPersistMove({
-  pveMatchRepository,
-  clock = () => new Date(),
-  finishPveMatch = makeFinishPveMatch({ pveMatchRepository, clock }),
-}) {
+function makeApplyAndPersistMove({ pveMatchRepository, clock = () => new Date() }) {
   /**
    * @param {object} match - Trận hiện tại (đọc từ repository)
    * @param {{ side: 'red'|'black', actor: 'PLAYER'|'BOT', move: object }} input
@@ -92,6 +97,27 @@ function makeApplyAndPersistMove({
       capturedType: captured ? captured.type : null,
     };
 
+    // FE-10: tính trạng thái ván của bên sắp đi TRƯỚC khi lưu để ghi kết quả cùng nước đi
+    const gameStatus = getGameStatus(nextBoard, nextSide);
+    let outcome = null;
+    if (GAME_OVER_STATUSES.includes(gameStatus.status)) {
+      outcome = {
+        status: PVE_MATCH_STATUS.FINISHED,
+        result: resultForPlayer(match.playerColor, gameStatus.loser),
+        endReason: gameStatus.status,
+        finishedAt: now.toISOString(),
+      };
+    } else if (match.ply + 1 >= MAX_PLY_PER_MATCH) {
+      // REV-13: vượt giới hạn số nước đi mà chưa phân thắng bại -> ván HOÀ (giống PvP).
+      // Chiếu bí / hết nước ở nước cuối vẫn được ưu tiên (nhánh trên).
+      outcome = {
+        status: PVE_MATCH_STATUS.FINISHED,
+        result: PVE_RESULT.DRAW,
+        endReason: PVE_END_REASON.DRAW_PLY_LIMIT,
+        finishedAt: now.toISOString(),
+      };
+    }
+
     const saved = await pveMatchRepository.saveMove({
       matchId: match.id,
       expectedPly: match.ply,
@@ -99,6 +125,7 @@ function makeApplyAndPersistMove({
       sideToMove: nextSide,
       move: moveRecord,
       now: now.toISOString(),
+      outcome,
     });
     if (!saved) {
       const current = await pveMatchRepository.findById(match.id);
@@ -116,12 +143,8 @@ function makeApplyAndPersistMove({
     }
 
     const savedMove = { ...moveRecord, createdAt: now };
-    const gameStatus = getGameStatus(nextBoard, nextSide);
-    if (GAME_OVER_STATUSES.includes(gameStatus.status)) {
-      const { match: finishedMatch } = await finishPveMatch(match.id, {
-        result: resultForPlayer(match.playerColor, gameStatus.loser),
-        endReason: gameStatus.status,
-      });
+    if (outcome) {
+      const finishedMatch = await pveMatchRepository.findById(match.id);
       return { match: finishedMatch, move: savedMove, gameStatus };
     }
 

@@ -1,21 +1,45 @@
 const { URL } = require('node:url');
-const RegisterUserUseCase = require('../../../application/useCases/registerUser');
-const LoginUserUseCase = require('../../../application/useCases/loginUser');
-const ForgotPasswordUseCase = require('../../../application/useCases/forgotPassword');
-const ResetPasswordUseCase = require('../../../application/useCases/resetPassword');
-const OAuthLoginUseCase = require('../../../application/useCases/oauthLogin');
-const { authenticateRequest } = require('../middlewares/authMiddleware');
+const { corsHeaders } = require('../../../core/cors');
+const { sendError } = require('../utils/errorResponse');
+const RegisterUserUseCase = require('../../../application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../../../application/use-cases/auth/loginUser');
+const ForgotPasswordUseCase = require('../../../application/use-cases/auth/forgotPassword');
+const ResetPasswordUseCase = require('../../../application/use-cases/auth/resetPassword');
+const OAuthLoginUseCase = require('../../../application/use-cases/auth/oauthLogin');
+const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
+const {
+  enforce,
+  getClientIp,
+  isDevLoopbackExempt,
+  loginLimiter,
+  registerLimiter,
+  loginUsernameLimiter,
+  loginSlowdownMs,
+} = require('../middlewares/rateLimiter');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   });
   response.end(JSON.stringify(body));
+}
+
+/**
+ * BE-13: trả 429 nếu vượt giới hạn.
+ * @returns {boolean} true nếu đã trả response và cần dừng
+ */
+function rejectIfRateLimited(request, response, limiter, key) {
+  const limited = enforce(limiter, key);
+  if (!limited) return false;
+  response.setHeader?.('Retry-After', String(limited.retryAfterSeconds));
+  sendJson(response, limited.statusCode, {
+    error: limited.message,
+    code: limited.code,
+    retryAfterSeconds: limited.retryAfterSeconds,
+  });
+  return true;
 }
 
 function parseJsonBody(request) {
@@ -55,6 +79,11 @@ function createAuthHandler({
   authMiddlewareOptions = {},
 } = {}) {
   return async (request, response) => {
+    // REV-08: CORS theo whitelist (trước đây import corsHeaders nhưng không gọi)
+    for (const [headerName, headerValue] of Object.entries(corsHeaders(request))) {
+      response.setHeader(headerName, headerValue);
+    }
+
     if (request.method === 'OPTIONS') {
       sendJson(response, 204, {});
       return;
@@ -74,6 +103,10 @@ function createAuthHandler({
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận POST.' });
         return;
       }
+
+      // BE-13: 5 lần đăng ký / giờ / IP
+      if (!isDevLoopbackExempt(request)
+        && rejectIfRateLimited(request, response, registerLimiter, `register:${getClientIp(request)}`)) return;
 
       let payload;
       try {
@@ -110,18 +143,80 @@ function createAuthHandler({
         return;
       }
 
+      // BE-13 + REV-04: IP chỉ bị đếm khi đăng nhập THẤT BẠI (đăng nhập đúng không bị tính).
+      // Username chỉ bị làm chậm, không khoá hẳn -> kẻ xấu không thể khoá tài khoản người khác.
+      //
+      // REV2-16: lượt thử phải được ĐẾM NGAY LÚC REQUEST ĐẾN (đồng bộ, trước mọi await). Trước đây
+      // chỉ `isBlocked` lúc đến và `record` sau khi bcrypt xong nên 200 request song song từ một IP
+      // đều được xử lý. Giờ lượt được ghi ngay và chỉ hoàn lại (refund) nếu đó không phải thất bại.
+      // REV2-17: đăng nhập thành công KHÔNG xoá bộ đếm của IP (nếu xoá thì kẻ xấu xen 1 lần đăng nhập
+      // vào tài khoản của mình giữa mỗi 9 lần đoán để không bao giờ bị chặn); chỉ hoàn lại lượt của
+      // chính request đó.
+      // Demo dev trên một máy: không đếm theo IP loopback (xem isDevLoopbackExempt)
+      const ipExempt = isDevLoopbackExempt(request);
+      const loginIpKey = `login-ip:${getClientIp(request)}`;
+      const ipAttempt = ipExempt ? { allowed: true, ts: null } : loginLimiter.consume(loginIpKey);
+      if (!ipAttempt.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(ipAttempt.retryAfterMs / 1000)) || 60;
+        response.setHeader?.('Retry-After', String(retryAfterSeconds));
+        sendJson(response, 429, {
+          error: 'Bạn đã thử quá nhiều lần. Vui lòng thử lại sau ít phút.',
+          code: 'RATE_LIMITED',
+          retryAfterSeconds,
+        });
+        return;
+      }
+      let ipCounted = !ipExempt;
+      const refundIp = () => {
+        if (!ipCounted) return;
+        ipCounted = false;
+        loginLimiter.refund(loginIpKey, ipAttempt.ts);
+      };
+
       let payload;
       try {
         payload = await parseJsonBody(request);
       } catch (err) {
+        refundIp();
         sendJson(response, 400, { error: err.message });
         return;
       }
 
+      const loginKey = typeof payload.username === 'string' ? payload.username.trim().toLowerCase() : '';
+      const userKey = loginKey ? `login-user:${loginKey}` : null;
+      // REV2-16: độ trễ tính từ số lượt đã đếm (kể cả đang xử lý song song) rồi đếm luôn lượt này
+      const slowDownMs = loginKey ? loginSlowdownMs(loginKey) : 0;
+      const userTs = Date.now();
+      let userCounted = false;
+      if (userKey) {
+        loginUsernameLimiter.record(userKey, userTs);
+        userCounted = true;
+      }
+      const refundUser = () => {
+        if (!userCounted) return;
+        userCounted = false;
+        loginUsernameLimiter.refund(userKey, userTs);
+      };
+      if (slowDownMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, slowDownMs));
+      }
+
       try {
         const result = await loginUseCase.execute(payload);
+        // Đăng nhập thành công: hoàn lượt của IP; bộ đếm của USERNAME này thì xoá hẳn (chủ tài khoản
+        // đã chứng minh được mật khẩu). KHÔNG đụng bộ đếm thất bại của IP.
+        refundIp();
+        if (userKey) {
+          loginUsernameLimiter.reset(userKey);
+          userCounted = false;
+        }
         sendJson(response, 200, result);
       } catch (err) {
+        // Chỉ giữ lại lượt đã đếm với các lần thất bại thực sự (sai thông tin / tài khoản bị khoá)
+        if (err.code !== 'INVALID_CREDENTIALS' && err.code !== 'ACCOUNT_INACTIVE') {
+          refundIp();
+          refundUser();
+        }
         if (err.code === 'VALIDATION_ERROR') {
           sendJson(response, 400, { error: err.message });
         } else if (err.code === 'INVALID_CREDENTIALS') {
@@ -221,40 +316,12 @@ function createAuthHandler({
         });
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
 
-    // 6. Đăng nhập Facebook OAuth (COT-573)
-    if (pathname === '/api/auth/facebook') {
-      if (request.method !== 'POST') {
-        sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận POST.' });
-        return;
-      }
-
-      let payload;
-      try {
-        payload = await parseJsonBody(request);
-      } catch (err) {
-        sendJson(response, 400, { error: err.message });
-        return;
-      }
-
-      try {
-        const result = await oauthLoginUseCase.execute({
-          provider: 'facebook',
-          credential: payload.accessToken || payload.token || payload.credential,
-          redirectUrl: payload.redirectUrl,
-        });
-        sendJson(response, 200, result);
-      } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
-      }
-      return;
-    }
-
-    // 7. Lấy thông tin phiên hiện tại (Protected API - COT-572)
+    // 6. Lấy thông tin phiên hiện tại (Protected API - COT-572)
     if (pathname === '/api/auth/me') {
       if (request.method !== 'GET') {
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận GET.' });
@@ -262,7 +329,7 @@ function createAuthHandler({
       }
 
       try {
-        const decoded = authenticateRequest(request, authMiddlewareOptions);
+        const decoded = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
         const user = await userRepository.findById(decoded.id);
         if (!user) {
           sendJson(response, 404, { error: 'Người dùng không tồn tại.' });
@@ -280,10 +347,7 @@ function createAuthHandler({
           },
         });
       } catch (err) {
-        sendJson(response, err.statusCode || 401, {
-          error: err.message,
-          code: err.code || 'UNAUTHORIZED',
-        });
+        sendError(response, sendJson, err, { defaultStatus: 401 });
       }
       return;
     }

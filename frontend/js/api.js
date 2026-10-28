@@ -132,33 +132,35 @@ class RoomApiService {
     this.friendsStore = JSON.parse(JSON.stringify(INITIAL_FRIENDS));
     this.pendingInvitations = new Map(); // invitationId -> invData
     this.realtimeListeners = [];
-    // Thông tin người dùng hiện tại (mặc định đã đăng nhập theo session)
-    this.currentUser = {
-      id: 'user-sang-01',
-      username: 'nguyen_tan_sang',
-      displayName: 'Nguyễn Tấn Sang',
-      elo: 1000,
-      avatar: '桑',
-      isLoggedIn: true
-    };
+    // FE-03: mặc định KHÔNG có ai đăng nhập. Trước đây hardcode user
+    // "Nguyễn Tấn Sang" với isLoggedIn: true -> mở trang là thấy như đã đăng nhập.
+    this.currentUser = null;
   }
 
   /**
    * Lấy thông tin người dùng đang đăng nhập
    */
   getCurrentUser() {
-    if (!this.currentUser || !this.currentUser.isLoggedIn) return null;
+    // FE-03: chỉ cần có user là coi như đã đăng nhập; trước đây còn đòi field
+    // isLoggedIn nên user thật trả về từ API luôn bị coi là khách.
+    if (!this.currentUser) return null;
+    const elo = Number.isFinite(Number(this.currentUser.elo))
+      ? Number(this.currentUser.elo)
+      : (Number.isFinite(Number(this.currentUser.eloRating)) ? Number(this.currentUser.eloRating) : 1000);
     return {
       ...this.currentUser,
-      elo: Number.isFinite(this.currentUser.elo) ? this.currentUser.elo : 1000
+      isLoggedIn: true,
+      elo
     };
   }
 
   /**
-   * Thiết lập thông tin người dùng (cho việc test / mock session)
+   * Thiết lập thông tin người dùng (null = đăng xuất / chưa đăng nhập)
    */
   setCurrentUser(user) {
-    this.currentUser = user;
+    this.currentUser = user
+      ? { ...user, isLoggedIn: true }
+      : null;
   }
 
   /**
@@ -271,13 +273,21 @@ class RoomApiService {
    * @param {string} roomCode - Mã phòng 6 ký tự số
    */
   async joinRoomByCode(roomCode) {
+    // REV-16: khách chưa đăng nhập không được vào phòng
+    if (!this.getCurrentUser()) {
+      const err = new Error('Yêu cầu đăng nhập để vào phòng.');
+      err.code = 'UNAUTHORIZED';
+      throw err;
+    }
+
     if (!roomCode || typeof roomCode !== 'string') {
       throw new Error('Mã phòng không được để trống.');
     }
 
-    const trimmedCode = roomCode.trim();
-    if (!/^\d{6}$/.test(trimmedCode)) {
-      throw new Error('Mã phòng phải bao gồm đúng 6 chữ số (0-9).');
+    // BE-14: 6 chữ số (công khai) hoặc 10 ký tự Crockford base32 (riêng tư); chữ thường được chuẩn hoá thành chữ hoa
+    const trimmedCode = roomCode.replace(/[\s-]/g, '').toUpperCase();
+    if (!/^\d{6}$/.test(trimmedCode) && !/^[0-9A-HJKMNP-TV-Z]{10}$/.test(trimmedCode)) {
+      throw new Error('Mã phòng phải gồm 6 chữ số (phòng công khai) hoặc 10 ký tự chữ và số (phòng riêng tư).');
     }
 
     // Tìm phòng trong store
@@ -550,16 +560,18 @@ class RoomApiService {
     if (!urlOrPath || typeof urlOrPath !== 'string') return null;
 
     // 1. Dạng /room/123456 hoặc /room/123456?abc=1
-    const matchPath = urlOrPath.match(/\/room\/(\d{6})(?:[/?#]|$)/i);
-    if (matchPath) return matchPath[1];
+    // BE-14: mã 6 số hoặc 10 ký tự base32 (phòng riêng tư)
+    const matchPath = urlOrPath.match(/\/room\/(\d{6}|[0-9A-HJKMNP-TV-Z]{10})(?:[/?#]|$)/i);
+    if (matchPath) return matchPath[1].toUpperCase();
 
     // 2. Dạng query parameter ?roomCode=123456 hoặc ?room=123456
-    const matchQuery = urlOrPath.match(/[?&](?:roomCode|room|code)=(\d{6})(?:[&?#]|$)/i);
-    if (matchQuery) return matchQuery[1];
+    const matchQuery = urlOrPath.match(/[?&](?:roomCode|room|code)=(\d{6}|[0-9A-HJKMNP-TV-Z]{10})(?:[&?#]|$)/i);
+    if (matchQuery) return matchQuery[1].toUpperCase();
 
     // 3. Nếu truyền trực tiếp mã 6 số
     const cleanCode = urlOrPath.trim();
     if (/^\d{6}$/.test(cleanCode)) return cleanCode;
+    if (/^[0-9A-HJKMNP-TV-Z]{10}$/i.test(cleanCode)) return cleanCode.toUpperCase();
 
     return null;
   }

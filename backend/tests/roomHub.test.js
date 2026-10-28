@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-592:
  * [2.3] [BE] Cấu hình WebSocket/SignalR Hub và Phân chia vai trò, quản lý State phòng.
@@ -13,8 +14,8 @@ process.env.DB_CLIENT = 'sqlite';
 const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
-const LoginUserUseCase = require('../src/application/useCases/loginUser');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
 const { RoomManager } = require('../src/infrastructure/database/repositories/RoomManager');
 const { RoomHub } = require('../src/presentation/websocket/roomHub');
 const { createServer } = require('../src/server');

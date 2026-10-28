@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createCot615Match } = require('../src/domain/entities/cot615Match');

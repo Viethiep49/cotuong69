@@ -13,20 +13,37 @@ const CHAT_ROLES = {
 const MESSAGE_STATUS = {
   SENDING: 'SENDING',
   SENT: 'SENT',
-  FAILED: 'FAILED'
+  FAILED: 'FAILED',
+  // REV2-14: không có transport thì tin chỉ nằm trên máy này — KHÔNG được báo "đã gửi"
+  LOCAL: 'LOCAL'
 };
 
 const MAX_MESSAGE_LENGTH = 255;
 
 class ChatService {
+  static normalizeUser(user) {
+    const source = user || {};
+    const name = source.displayName || source.username || source.name || 'Khách';
+    return {
+      id: source.id !== undefined && source.id !== null ? source.id : 'guest',
+      name,
+      avatar: source.avatar || String(name).slice(0, 1),
+      role: source.role || CHAT_ROLES.SPECTATOR
+    };
+  }
+
   constructor(options = {}) {
     this.roomId = options.roomId || 'room-default';
-    this.currentUser = options.currentUser || {
-      id: 'usr_sang',
-      name: 'Nguyễn Tấn Sang',
-      avatar: '桑',
-      role: CHAT_ROLES.HOST
-    };
+    // REV-16: không còn user hardcode; mặc định là khách (SPECTATOR -> không được chat)
+    // FE-05: luôn làm việc trên BẢN SAO { id, name, avatar, role } — user từ API có displayName/username
+    // chứ không có `name` nên trước đây `currentUser.name.slice` ném TypeError; bản sao cũng không
+    // làm đổi đối tượng của người gọi khi setRole.
+    this.currentUser = ChatService.normalizeUser(options.currentUser);
+    // FE-05: transport tuỳ chọn { send(message) -> Promise }. Có transport thì "SENT" chỉ đặt khi
+    // transport resolve (ack thật), reject -> FAILED. Không có transport (lobby cũ chưa có kênh
+    // realtime) thì tin chỉ hiển thị cục bộ với trạng thái LOCAL (REV2-14: không còn giả lập
+    // "Đã gửi" bằng timer); chat thật nằm ở màn hình trận React.
+    this.transport = options.transport && typeof options.transport.send === 'function' ? options.transport : null;
     this.messages = [];
     this.listeners = [];
     this.maxCharacters = MAX_MESSAGE_LENGTH;
@@ -146,14 +163,22 @@ class ChatService {
     this.messages.push(newMessage);
     this._notifyListeners({ type: 'MESSAGE_ADDED', message: newMessage, autoScroll: true });
 
-    // Giả lập gửi realtime qua WebSocket / Socket.IO
-    return new Promise((resolve) => {
-      setTimeout(() => {
+    if (this.transport) {
+      try {
+        await this.transport.send(newMessage);
         newMessage.status = MESSAGE_STATUS.SENT;
-        this._notifyListeners({ type: 'MESSAGE_STATUS_UPDATED', message: newMessage });
-        resolve(newMessage);
-      }, 50);
-    });
+      } catch (err) {
+        newMessage.status = MESSAGE_STATUS.FAILED;
+      }
+      this._notifyListeners({ type: 'MESSAGE_STATUS_UPDATED', message: newMessage });
+      return newMessage;
+    }
+
+    // REV2-14: không có transport -> không ai nhận được tin này. Đánh dấu LOCAL (chỉ trên máy
+    // này) ngay lập tức thay vì giả vờ "Đã gửi" sau một timer.
+    newMessage.status = MESSAGE_STATUS.LOCAL;
+    this._notifyListeners({ type: 'MESSAGE_STATUS_UPDATED', message: newMessage });
+    return newMessage;
   }
 
   /**

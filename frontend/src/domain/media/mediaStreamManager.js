@@ -48,7 +48,11 @@ class MediaStreamManager {
       };
     } catch (err) {
       // 2. Chế độ chỉ âm thanh: Nếu Camera bị từ chối/không có nhưng Micro có thể hoạt động
-      const isVideoFailure = ['NotFoundError', 'DevicesNotFoundError', 'OverconstrainedError'].includes(err.name) ||
+      // FE-01: NotReadableError/TrackStartError/AbortError = camera đang bị ứng dụng/tab khác chiếm
+      // (vd 2 trình duyệt trên cùng một máy dùng chung một webcam) -> vẫn cho gọi chỉ bằng mic.
+      const cameraBusy = ['NotReadableError', 'TrackStartError', 'AbortError'].includes(err.name);
+      const isVideoFailure = cameraBusy ||
+        ['NotFoundError', 'DevicesNotFoundError', 'OverconstrainedError'].includes(err.name) ||
         (err.name === 'NotAllowedError' && options.video && options.audio);
 
       if (isVideoFailure && options.video && options.audio) {
@@ -63,7 +67,9 @@ class MediaStreamManager {
             audioOnly: true,
             permissionStatus: 'GRANTED_AUDIO_ONLY',
             error: null,
-            warning: 'Không thể truy cập Camera. Cuộc gọi sẽ tiếp tục ở chế độ Chỉ âm thanh.',
+            warning: cameraBusy
+              ? 'Không mở được Camera vì đang được ứng dụng hoặc cửa sổ trình duyệt khác sử dụng (ví dụ hai trình duyệt dùng chung một webcam). Cuộc gọi sẽ tiếp tục ở chế độ Chỉ âm thanh.'
+              : 'Không thể truy cập Camera. Cuộc gọi sẽ tiếp tục ở chế độ Chỉ âm thanh.',
             instructions: null,
           };
         } catch (audioErr) {

@@ -1,18 +1,19 @@
 const { URL } = require('node:url');
-const { authenticateRequest } = require('../middlewares/authMiddleware');
-const GetOnlineFriendsUseCase = require('../../../application/useCases/friends/getOnlineFriends');
-const SendDirectInvitationUseCase = require('../../../application/useCases/friends/sendDirectInvitation');
-const RespondDirectInvitationUseCase = require('../../../application/useCases/friends/respondDirectInvitation');
-const CancelDirectInvitationUseCase = require('../../../application/useCases/friends/cancelDirectInvitation');
+const { corsHeaders } = require('../../../core/cors');
+const { sendError } = require('../utils/errorResponse');
+const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
+const { safeDecode } = require('../../../core/safeDecode');
+const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
+const GetOnlineFriendsUseCase = require('../../../application/use-cases/friends/getOnlineFriends');
+const SendDirectInvitationUseCase = require('../../../application/use-cases/friends/sendDirectInvitation');
+const RespondDirectInvitationUseCase = require('../../../application/use-cases/friends/respondDirectInvitation');
+const CancelDirectInvitationUseCase = require('../../../application/use-cases/friends/cancelDirectInvitation');
 const { directInvitationManager: defaultInvitationManager } = require('../../../infrastructure/database/repositories/DirectInvitationManager');
 
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   });
   response.end(JSON.stringify(body));
 }
@@ -48,8 +49,14 @@ function createFriendsHandler({
   cancelDirectInvitationUseCase = new CancelDirectInvitationUseCase(),
   invitationManager = defaultInvitationManager,
   authMiddlewareOptions = {},
+  userRepository = new PgUserRepository(),
 } = {}) {
   return async (request, response) => {
+    // CLEAN-05: CORS theo whitelist (thay cho Access-Control-Allow-Origin: *)
+    for (const [headerName, headerValue] of Object.entries(corsHeaders(request))) {
+      response.setHeader(headerName, headerValue);
+    }
+
     if (request.method === 'OPTIONS') {
       sendJson(response, 204, {});
       return;
@@ -67,9 +74,9 @@ function createFriendsHandler({
 
     let user;
     try {
-      user = authenticateRequest(request, authMiddlewareOptions);
+      user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
     } catch (err) {
-      sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
+      sendError(response, sendJson, err, { defaultStatus: 401 });
       return;
     }
 
@@ -84,7 +91,7 @@ function createFriendsHandler({
         const result = await getOnlineFriendsUseCase.execute(user.id);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
@@ -108,7 +115,7 @@ function createFriendsHandler({
         const result = await sendDirectInvitationUseCase.execute(user.id, payload);
         sendJson(response, 201, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
@@ -137,7 +144,11 @@ function createFriendsHandler({
         return;
       }
 
-      const invitationId = decodeURIComponent(respondMatch[1]);
+      const invitationId = safeDecode(respondMatch[1]);
+      if (invitationId === null) {
+        sendJson(response, 400, { error: 'Mã lời mời không hợp lệ.', code: 'INVALID_INVITATION_ID' });
+        return;
+      }
       let payload;
       try {
         payload = await parseJsonBody(request);
@@ -150,7 +161,7 @@ function createFriendsHandler({
         const result = await respondDirectInvitationUseCase.execute(user.id, invitationId, payload);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
@@ -163,12 +174,16 @@ function createFriendsHandler({
         return;
       }
 
-      const invitationId = decodeURIComponent(cancelMatch[1]);
+      const invitationId = safeDecode(cancelMatch[1]);
+      if (invitationId === null) {
+        sendJson(response, 400, { error: 'Mã lời mời không hợp lệ.', code: 'INVALID_INVITATION_ID' });
+        return;
+      }
       try {
         const result = cancelDirectInvitationUseCase.execute(user.id, invitationId);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }

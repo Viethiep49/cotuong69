@@ -29,3 +29,7 @@ TASK_REPORT_NGUYEN_TAN_SANG.md
 Thumbs.db
 .vscode/
 .idea/
+
+# CLEAN-05: chặn mọi file env, chỉ giữ file mẫu
+.env.*
+!.env.example

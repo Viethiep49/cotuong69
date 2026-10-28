@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-625:
  * [4.1] [BE] WebSocket trung chuyển tin nhắn Text Chat phòng riêng giữa hai người chơi.
@@ -12,8 +13,8 @@ process.env.DB_CLIENT = 'sqlite';
 const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
-const LoginUserUseCase = require('../src/application/useCases/loginUser');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
 const { RoomManager } = require('../src/infrastructure/database/repositories/RoomManager');
 const { RoomHub } = require('../src/presentation/websocket/roomHub');
 const { createServer } = require('../src/server');
@@ -197,9 +198,9 @@ describe('Nghiệm thu Task COT-625: WebSocket trung chuyển tin nhắn Text Ch
 
       await waitForMessage(specMsgs, (m) => m.type === 'Connected' && m.role === 'SPECTATOR');
 
-      // 1. Khán giả thử gửi chat -> Máy chủ từ chối với mã lỗi FORBIDDEN
+      // 1. Khán giả thử gửi chat -> Máy chủ từ chối với mã lỗi SPECTATOR_CANNOT_CHAT (REV2-08)
       specWs.send(JSON.stringify({ type: 'chat', text: 'Tôi là khán giả muốn nhắn tin!' }));
-      const forbiddenErr = await waitForMessage(specMsgs, (m) => m.type === 'error' && m.code === 'FORBIDDEN');
+      const forbiddenErr = await waitForMessage(specMsgs, (m) => m.type === 'error' && m.code === 'SPECTATOR_CANNOT_CHAT');
       assert.ok(forbiddenErr.message.includes('Chỉ hai người chơi'));
 
       // 2. Hai người chơi nhắn tin qua lại
@@ -279,9 +280,9 @@ describe('Nghiệm thu Task COT-625: WebSocket trung chuyển tin nhắn Text Ch
       hostWs.send(JSON.stringify({ type: 'demote' }));
       await waitForMessage(oppMsgs, (m) => m.type === 'RoleChanged');
 
-      // Đối thủ (giờ là Khán giả) thử gửi tin nhắn -> Bị từ chối FORBIDDEN
+      // Đối thủ (giờ là Khán giả) thử gửi tin nhắn -> Bị từ chối SPECTATOR_CANNOT_CHAT (REV2-08)
       oppWs.send(JSON.stringify({ type: 'chat', text: 'Tôi vừa bị demote nhưng vẫn muốn chat' }));
-      const forbidden = await waitForMessage(oppMsgs, (m) => m.type === 'error' && m.code === 'FORBIDDEN');
+      const forbidden = await waitForMessage(oppMsgs, (m) => m.type === 'error' && m.code === 'SPECTATOR_CANNOT_CHAT');
       assert.ok(forbidden);
 
       hostWs.close();

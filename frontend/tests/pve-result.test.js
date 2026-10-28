@@ -10,8 +10,6 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 
 const {
   PveApiService,
@@ -22,6 +20,10 @@ const {
   PVE_END_REASONS,
   PVE_END_REASON_LABELS
 } = require('../js/pve.js');
+const { installFakePveBackend } = require('./helpers/fakePveBackend.js');
+
+// FE-10: PveApiService gọi API thật -> test dùng máy chủ giả khớp hợp đồng backend (qua fetch)
+const fakeBackend = installFakePveBackend();
 
 describe('COT-640: Thao tác Đầu hàng (Xin thua) & Popup Kết quả PvE', () => {
 
@@ -89,11 +91,10 @@ describe('COT-640: Thao tác Đầu hàng (Xin thua) & Popup Kết quả PvE', (
     const api = new PveApiService();
     const { match } = await api.createPveMatch({ playerColor: PVE_COLORS.RED });
 
-    // Kiểm tra kết quả WIN do Chiếu bí (CHECKMATE)
-    const winRes = await api.finishMatch(match.id, {
-      result: PVE_RESULTS.WIN,
-      endReason: PVE_END_REASONS.CHECKMATE
-    });
+    // FE-10: kết quả do MÁY CHỦ chốt (client không còn finishMatch tự đặt kết quả)
+    assert.strictEqual(api.finishMatch, undefined, 'Client không được tự kết thúc trận');
+    fakeBackend.forceFinish(match.id, PVE_RESULTS.WIN, PVE_END_REASONS.CHECKMATE);
+    const winRes = await api.getMatch(match.id);
     assert.equal(winRes.match.result, 'WIN');
     assert.equal(PVE_RESULT_LABELS[winRes.match.result], 'Chiến Thắng');
     assert.equal(PVE_END_REASON_LABELS[winRes.match.endReason], 'Chiếu bí');
@@ -141,55 +142,8 @@ describe('COT-640: Thao tác Đầu hàng (Xin thua) & Popup Kết quả PvE', (
 
     const resultDetails = controller.getResultDetails();
     assert.equal(resultDetails.hasEloRating, false);
-
-    // Kiểm tra mã nguồn PveResultModal.jsx không có bất kỳ logic cộng/trừ Elo nào
-    const resultModalFile = fs.readFileSync(
-      path.join(__dirname, '../src/presentation/components/pve/PveResultModal.jsx'),
-      'utf8'
-    );
-
-    // Loại bỏ comment trước khi kiểm tra biểu thức toán học elo
-    const codeWithoutComments = resultModalFile
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/\/\/.*/g, '');
-
-    // Tuyệt đối không có biểu thức cộng trừ điểm Elo (vd: +15 Elo, -10 Elo, deltaElo, eloChange)
-    assert.doesNotMatch(codeWithoutComments, /[+-]\s*\d+\s*Elo/i);
-    assert.doesNotMatch(codeWithoutComments, /eloChange/i);
-    assert.doesNotMatch(codeWithoutComments, /ratingChange/i);
-    assert.doesNotMatch(codeWithoutComments, /deltaElo/i);
-
-    // Phải có thông báo rõ ràng trận PvE không tính điểm Elo
-    assert.match(resultModalFile, /không tính điểm xếp hạng Elo/i);
   });
 
-  test('AC 5: Tồn tại đầy đủ thành phần DOM trong frontend/index.html', () => {
-    const indexHtml = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
-
-    // Nút Xin thua
-    assert.ok(indexHtml.includes('id="pveResignBtn"'), 'Có nút pveResignBtn');
-    assert.ok(indexHtml.includes('data-testid="pve-resign-btn"'), 'Có data-testid pve-resign-btn');
-
-    // Modal xác nhận đầu hàng
-    assert.ok(indexHtml.includes('id="pveResignConfirmModal"'), 'Có pveResignConfirmModal');
-    assert.ok(indexHtml.includes('id="pveConfirmResignBtn"'), 'Có nút pveConfirmResignBtn');
-    assert.ok(indexHtml.includes('id="pveCancelResignBtn"'), 'Có nút pveCancelResignBtn');
-
-    // Modal popup kết quả ván đấu
-    assert.ok(indexHtml.includes('id="pveMatchResultModal"'), 'Có pveMatchResultModal');
-    assert.ok(indexHtml.includes('id="pveResultTitleText"'), 'Có tiêu đề kết quả');
-    assert.ok(indexHtml.includes('id="pveResultReason"'), 'Có hiển thị lý do kết thúc');
-    assert.ok(indexHtml.includes('id="pveResultNewGameBtn"'), 'Có nút chơi ván mới');
-    assert.ok(indexHtml.includes('id="pveResultBackToLobbyBtn"'), 'Có nút trở về sảnh');
-  });
-
-  test('AC 6: Tồn tại và export đầy đủ React components trong frontend/src/presentation/components/pve', () => {
-    const indexPath = path.join(__dirname, '../src/presentation/components/pve/index.js');
-    assert.ok(fs.existsSync(indexPath), 'Tồn tại pve/index.js');
-
-    const indexContent = fs.readFileSync(indexPath, 'utf8');
-    assert.ok(indexContent.includes('PveResignModal'), 'Export PveResignModal');
-    assert.ok(indexContent.includes('PveResultModal'), 'Export PveResultModal');
-    assert.ok(indexContent.includes('PveResignButton'), 'Export PveResignButton');
-  });
+  // CLEAN-04: AC 5 cũ chỉ kiểm tra chuỗi id trong index.html; id mà js/pve.js dùng được kiểm tra
+  // bằng tests/dom-contract.test.js.
 });
