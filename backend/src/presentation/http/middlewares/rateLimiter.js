@@ -128,6 +128,47 @@ function normalizeIp(value) {
 }
 
 /**
+ * REV2-22: mở rộng địa chỉ IPv6 thành 8 nhóm số (null nếu không hợp lệ). Hỗ trợ "::" và đuôi IPv4.
+ */
+function expandIpv6(ip) {
+  let addr = ip;
+  if (addr.includes('.')) {
+    const idx = addr.lastIndexOf(':');
+    const v4 = addr.slice(idx + 1).split('.').map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : NaN));
+    if (v4.length !== 4 || v4.some((n) => !(n >= 0 && n <= 255))) return null;
+    addr = `${addr.slice(0, idx + 1)}${((v4[0] << 8) | v4[1]).toString(16)}:${((v4[2] << 8) | v4[3]).toString(16)}`;
+  }
+  const halves = addr.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  let groups;
+  if (halves.length === 2) {
+    const missing = 8 - head.length - tail.length;
+    if (missing < 1) return null;
+    groups = [...head, ...Array(missing).fill('0'), ...tail];
+  } else {
+    groups = head;
+  }
+  if (groups.length !== 8 || groups.some((g) => !/^[0-9a-f]{1,4}$/i.test(g))) return null;
+  return groups.map((g) => parseInt(g, 16));
+}
+
+/**
+ * REV2-22: khoá giới hạn tốc độ theo tiền tố /64 cho IPv6. Mỗi máy/nhà mạng thường được cấp cả
+ * dải /64 (2^64 địa chỉ) nên kẻ tấn công đổi địa chỉ trong dải để né giới hạn theo từng IP.
+ * IPv4 giữ nguyên.
+ * @param {string} ip địa chỉ đã normalizeIp
+ * @returns {string}
+ */
+function rateLimitKeyForIp(ip) {
+  if (typeof ip !== 'string' || !ip.includes(':')) return ip;
+  const groups = expandIpv6(ip);
+  if (!groups) return ip;
+  return `${groups.slice(0, 4).map((g) => g.toString(16)).join(':')}::/64`;
+}
+
+/**
  * REV2-18: số reverse proxy TIN CẬY đứng trước app (mặc định 1). Mỗi proxy tin cậy thêm
  * địa chỉ của peer trước nó vào CUỐI X-Forwarded-For, nên IP thật của client là phần tử thứ
  * `hops` tính từ bên PHẢI. Phần tử bên trái do client tự đặt -> không được tin.
@@ -155,13 +196,13 @@ function getClientIp(request) {
       const hops = trustedProxyHops();
       if (entries.length >= hops) {
         const candidate = normalizeIp(entries[entries.length - hops]);
-        if (candidate) return candidate;
+        if (candidate) return rateLimitKeyForIp(candidate);
       }
     }
   }
   const socket = request.socket || request.connection;
   const remote = normalizeIp(socket && socket.remoteAddress);
-  return remote || 'unknown';
+  return remote ? rateLimitKeyForIp(remote) : 'unknown';
 }
 
 // Giới hạn theo plan BE-13
@@ -218,6 +259,7 @@ module.exports = {
   SlidingWindowLimiter,
   getClientIp,
   normalizeIp,
+  rateLimitKeyForIp,
   loginSlowdownMs,
   loginUsernameLimiter,
   enforce,
