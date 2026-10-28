@@ -1,6 +1,6 @@
-const { hashPassword, MAX_PASSWORD_BYTES } = require('../services/passwordService');
-const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
-const PgPasswordResetRepository = require('../../infrastructure/database/repositories/PgPasswordResetRepository');
+const { hashPassword, MAX_PASSWORD_BYTES } = require('../../services/passwordService');
+const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
+const PgPasswordResetRepository = require('../../../infrastructure/database/repositories/PgPasswordResetRepository');
 
 const PASSWORD_HAS_LETTER = /[A-Za-z]/;
 const PASSWORD_HAS_NUMBER = /\d/;

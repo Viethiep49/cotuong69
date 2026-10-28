@@ -14,7 +14,7 @@ const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
 const PgPasswordResetRepository = require('../src/infrastructure/database/repositories/PgPasswordResetRepository');
-const ForgotPasswordUseCase = require('../src/application/useCases/forgotPassword');
+const ForgotPasswordUseCase = require('../src/application/use-cases/auth/forgotPassword');
 const emailService = require('../src/infrastructure/mailer/emailService');
 const { createServer } = require('../src/server');
 

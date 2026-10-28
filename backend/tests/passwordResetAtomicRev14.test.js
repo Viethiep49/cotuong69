@@ -13,8 +13,8 @@ const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
 const PgPasswordResetRepository = require('../src/infrastructure/database/repositories/PgPasswordResetRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
-const ResetPasswordUseCase = require('../src/application/useCases/resetPassword');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
+const ResetPasswordUseCase = require('../src/application/use-cases/auth/resetPassword');
 
 describe('REV-14: reset mật khẩu nguyên tử', () => {
   let userRepo;

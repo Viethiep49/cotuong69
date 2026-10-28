@@ -15,10 +15,10 @@ process.env.DB_CLIENT = 'sqlite';
 const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
-const LoginUserUseCase = require('../src/application/useCases/loginUser');
-const UpdateProfileUseCase = require('../src/application/useCases/updateProfile');
-const UploadAvatarUseCase = require('../src/application/useCases/uploadAvatar');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
+const UpdateProfileUseCase = require('../src/application/use-cases/user/updateProfile');
+const UploadAvatarUseCase = require('../src/application/use-cases/user/uploadAvatar');
 const { validateDisplayName, validateAvatarFile } = require('../src/domain/validators/profileValidator');
 const { createServer } = require('../src/server');
 

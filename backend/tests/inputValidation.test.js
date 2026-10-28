@@ -16,8 +16,8 @@ const { validateDisplayName } = require('../src/domain/validators/profileValidat
 const { validateRegisterInput } = require('../src/domain/validators/authValidator');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
 const PgFriendRepository = require('../src/infrastructure/database/repositories/PgFriendRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
-const LoginUserUseCase = require('../src/application/useCases/loginUser');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
 
 describe('BE-16: validate input', () => {
   test('đăng ký dùng CÙNG rule tên hiển thị với hồ sơ (2-50, từ cấm)', () => {

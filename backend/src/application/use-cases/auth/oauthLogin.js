@@ -1,10 +1,10 @@
-const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
-const PgOAuthRepository = require('../../infrastructure/database/repositories/PgOAuthRepository');
-const OAuthVerifierService = require('../services/oauthService');
-const defaultDb = require('../../config/db');
-const { generateAccessToken } = require('../services/tokenService');
+const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
+const PgOAuthRepository = require('../../../infrastructure/database/repositories/PgOAuthRepository');
+const OAuthVerifierService = require('../../services/oauthService');
+const defaultDb = require('../../../config/db');
+const { generateAccessToken } = require('../../services/tokenService');
 const { sanitizeRedirectUrl } = require('./loginUser');
-const { validateDisplayName } = require('../../domain/validators/profileValidator');
+const { validateDisplayName } = require('../../../domain/validators/profileValidator');
 
 /**
  * REV-15: tên hiển thị lấy từ Google phải qua validateDisplayName; không hợp lệ

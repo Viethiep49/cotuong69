@@ -16,7 +16,7 @@ const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
 const PgOAuthRepository = require('../src/infrastructure/database/repositories/PgOAuthRepository');
-const OAuthLoginUseCase = require('../src/application/useCases/oauthLogin');
+const OAuthLoginUseCase = require('../src/application/use-cases/auth/oauthLogin');
 const { verifyAccessToken } = require('../src/application/services/tokenService');
 const { createServer } = require('../src/server');
 

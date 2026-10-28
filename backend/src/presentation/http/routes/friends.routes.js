@@ -4,10 +4,10 @@ const { sendError } = require('../utils/errorResponse');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 const { safeDecode } = require('../../../core/safeDecode');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
-const GetOnlineFriendsUseCase = require('../../../application/useCases/friends/getOnlineFriends');
-const SendDirectInvitationUseCase = require('../../../application/useCases/friends/sendDirectInvitation');
-const RespondDirectInvitationUseCase = require('../../../application/useCases/friends/respondDirectInvitation');
-const CancelDirectInvitationUseCase = require('../../../application/useCases/friends/cancelDirectInvitation');
+const GetOnlineFriendsUseCase = require('../../../application/use-cases/friends/getOnlineFriends');
+const SendDirectInvitationUseCase = require('../../../application/use-cases/friends/sendDirectInvitation');
+const RespondDirectInvitationUseCase = require('../../../application/use-cases/friends/respondDirectInvitation');
+const CancelDirectInvitationUseCase = require('../../../application/use-cases/friends/cancelDirectInvitation');
 const { directInvitationManager: defaultInvitationManager } = require('../../../infrastructure/database/repositories/DirectInvitationManager');
 
 function sendJson(response, statusCode, body) {

@@ -13,12 +13,12 @@ process.env.DB_CLIENT = 'sqlite';
 const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
-const LoginUserUseCase = require('../src/application/useCases/loginUser');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
 const { RoomManager } = require('../src/infrastructure/database/repositories/RoomManager');
-const CreateRoomUseCase = require('../src/application/useCases/room/createRoom');
-const GetRoomByCodeUseCase = require('../src/application/useCases/room/getRoomByCode');
-const JoinRoomByLinkUseCase = require('../src/application/useCases/room/joinRoomByLink');
+const CreateRoomUseCase = require('../src/application/use-cases/room/createRoom');
+const GetRoomByCodeUseCase = require('../src/application/use-cases/room/getRoomByCode');
+const JoinRoomByLinkUseCase = require('../src/application/use-cases/room/joinRoomByLink');
 const { createServer } = require('../src/server');
 
 describe('Nghiệm thu Task COT-588: Tạo phòng chơi và sinh mã phòng 6 chữ số ngẫu nhiên', () => {

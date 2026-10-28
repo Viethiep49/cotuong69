@@ -2,8 +2,8 @@ const { URL } = require('node:url');
 const { corsHeaders } = require('../../../core/cors');
 const { sendError } = require('../utils/errorResponse');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
-const UpdateProfileUseCase = require('../../../application/useCases/updateProfile');
-const UploadAvatarUseCase = require('../../../application/useCases/uploadAvatar');
+const UpdateProfileUseCase = require('../../../application/use-cases/user/updateProfile');
+const UploadAvatarUseCase = require('../../../application/use-cases/user/uploadAvatar');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
 function sendJson(response, statusCode, body) {

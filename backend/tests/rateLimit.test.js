@@ -12,7 +12,7 @@ process.env.DB_CLIENT = 'sqlite';
 const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
 const { createServer } = require('../src/server');
 const { SlidingWindowLimiter, resetAll } = require('../src/presentation/http/middlewares/rateLimiter');
 
@@ -188,7 +188,7 @@ describe('BE-13: không lộ tài khoản khi đăng nhập', () => {
       password: 'StrongPassword123',
     });
 
-    const LoginUserUseCase = require('../src/application/useCases/loginUser');
+    const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
     const login = new LoginUserUseCase({ userRepository: userRepo });
 
     const missing = await login.execute({ username: 'khong_ton_tai', password: 'Whatever123' }).catch((e) => e);

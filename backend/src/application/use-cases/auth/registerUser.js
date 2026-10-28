@@ -1,6 +1,6 @@
-const { validateRegisterInput } = require('../../domain/validators/authValidator');
-const { hashPassword } = require('../services/passwordService');
-const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
+const { validateRegisterInput } = require('../../../domain/validators/authValidator');
+const { hashPassword } = require('../../services/passwordService');
+const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
 class RegisterUserUseCase {
   constructor({ userRepository = new PgUserRepository(), hasher = { hashPassword } } = {}) {

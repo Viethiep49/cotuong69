@@ -1,11 +1,11 @@
 const { URL } = require('node:url');
 const { corsHeaders } = require('../../../core/cors');
 const { sendError } = require('../utils/errorResponse');
-const RegisterUserUseCase = require('../../../application/useCases/registerUser');
-const LoginUserUseCase = require('../../../application/useCases/loginUser');
-const ForgotPasswordUseCase = require('../../../application/useCases/forgotPassword');
-const ResetPasswordUseCase = require('../../../application/useCases/resetPassword');
-const OAuthLoginUseCase = require('../../../application/useCases/oauthLogin');
+const RegisterUserUseCase = require('../../../application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../../../application/use-cases/auth/loginUser');
+const ForgotPasswordUseCase = require('../../../application/use-cases/auth/forgotPassword');
+const ResetPasswordUseCase = require('../../../application/use-cases/auth/resetPassword');
+const OAuthLoginUseCase = require('../../../application/use-cases/auth/oauthLogin');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
 const {
   enforce,

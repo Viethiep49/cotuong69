@@ -1,5 +1,5 @@
-const { validateDisplayName } = require('../../domain/validators/profileValidator');
-const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
+const { validateDisplayName } = require('../../../domain/validators/profileValidator');
+const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
 class UpdateProfileUseCase {
   constructor({ userRepository = new PgUserRepository() } = {}) {

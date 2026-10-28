@@ -13,10 +13,10 @@ const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
 const PgPasswordResetRepository = require('../src/infrastructure/database/repositories/PgPasswordResetRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
-const LoginUserUseCase = require('../src/application/useCases/loginUser');
-const ForgotPasswordUseCase = require('../src/application/useCases/forgotPassword');
-const ResetPasswordUseCase = require('../src/application/useCases/resetPassword');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
+const ForgotPasswordUseCase = require('../src/application/use-cases/auth/forgotPassword');
+const ResetPasswordUseCase = require('../src/application/use-cases/auth/resetPassword');
 const { authenticateRequestWithSession } = require('../src/presentation/http/middlewares/authMiddleware');
 const { hashToken } = require('../src/infrastructure/database/repositories/PgPasswordResetRepository');
 

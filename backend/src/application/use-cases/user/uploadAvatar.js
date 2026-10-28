@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { validateAvatarFile } = require('../../domain/validators/profileValidator');
-const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
+const { validateAvatarFile } = require('../../../domain/validators/profileValidator');
+const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
 class UploadAvatarUseCase {
   constructor({

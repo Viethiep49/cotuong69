@@ -1,6 +1,6 @@
-const { comparePassword } = require('../services/passwordService');
-const { generateAccessToken } = require('../services/tokenService');
-const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
+const { comparePassword } = require('../../services/passwordService');
+const { generateAccessToken } = require('../../services/tokenService');
+const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
 /**
  * BE-16: chỉ chấp nhận đường dẫn nội bộ ("/room/123"), chặn open-redirect

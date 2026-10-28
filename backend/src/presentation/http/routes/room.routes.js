@@ -4,9 +4,9 @@ const { sendError } = require('../utils/errorResponse');
 const { safeDecode } = require('../../../core/safeDecode');
 const { enforce, getClientIp, roomLookupLimiter } = require('../middlewares/rateLimiter');
 const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
-const CreateRoomUseCase = require('../../../application/useCases/room/createRoom');
-const GetRoomByCodeUseCase = require('../../../application/useCases/room/getRoomByCode');
-const JoinRoomByLinkUseCase = require('../../../application/useCases/room/joinRoomByLink');
+const CreateRoomUseCase = require('../../../application/use-cases/room/createRoom');
+const GetRoomByCodeUseCase = require('../../../application/use-cases/room/getRoomByCode');
+const JoinRoomByLinkUseCase = require('../../../application/use-cases/room/joinRoomByLink');
 const { roomManager: defaultRoomManager } = require('../../../infrastructure/database/repositories/RoomManager');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 

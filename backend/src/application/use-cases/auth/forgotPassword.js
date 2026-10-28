@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
-const PgUserRepository = require('../../infrastructure/database/repositories/PgUserRepository');
-const PgPasswordResetRepository = require('../../infrastructure/database/repositories/PgPasswordResetRepository');
-const defaultEmailService = require('../../infrastructure/mailer/emailService');
+const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
+const PgPasswordResetRepository = require('../../../infrastructure/database/repositories/PgPasswordResetRepository');
+const defaultEmailService = require('../../../infrastructure/mailer/emailService');
 
 const EMAIL_REGEX = /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/;
 const TOKEN_EXPIRY_MINUTES = 15;

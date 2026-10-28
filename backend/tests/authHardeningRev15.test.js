@@ -14,8 +14,8 @@ const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
 const PgOAuthRepository = require('../src/infrastructure/database/repositories/PgOAuthRepository');
-const OAuthLoginUseCase = require('../src/application/useCases/oauthLogin');
-const LoginUserUseCase = require('../src/application/useCases/loginUser');
+const OAuthLoginUseCase = require('../src/application/use-cases/auth/oauthLogin');
+const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
 const { hashPassword } = require('../src/application/services/passwordService');
 
 describe('REV-15: hardening auth', () => {

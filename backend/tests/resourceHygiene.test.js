@@ -8,8 +8,8 @@ const assert = require('node:assert/strict');
 const { RoomManager } = require('../src/infrastructure/database/repositories/RoomManager');
 const { DirectInvitationManager } = require('../src/infrastructure/database/repositories/DirectInvitationManager');
 const { OnlineUserManager } = require('../src/infrastructure/database/repositories/OnlineUserManager');
-const SendDirectInvitationUseCase = require('../src/application/useCases/friends/sendDirectInvitation');
-const RespondDirectInvitationUseCase = require('../src/application/useCases/friends/respondDirectInvitation');
+const SendDirectInvitationUseCase = require('../src/application/use-cases/friends/sendDirectInvitation');
+const RespondDirectInvitationUseCase = require('../src/application/use-cases/friends/respondDirectInvitation');
 const emailService = require('../src/infrastructure/mailer/emailService');
 
 const host = { id: 1, username: 'host', displayName: 'Host' };

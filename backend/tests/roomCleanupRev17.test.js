@@ -7,7 +7,7 @@ const { test, describe, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { RoomManager } = require('../src/infrastructure/database/repositories/RoomManager');
 const { RoomHub } = require('../src/presentation/websocket/roomHub');
-const CreateRoomUseCase = require('../src/application/useCases/room/createRoom');
+const CreateRoomUseCase = require('../src/application/use-cases/room/createRoom');
 
 const users = {
   1: { id: 1, username: 'rev17_a', displayName: 'Người A' },
