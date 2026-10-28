@@ -72,5 +72,48 @@ class ForkFailureFlowTest(unittest.TestCase):
         self.assertIn("Backend Unit Tests", posted[0])
 
 
+class ForkPassingFlowTest(unittest.TestCase):
+    """REV2-19: PR từ fork có CI xanh vẫn không được chạy Scope Guard (Jira + Gemini)."""
+
+    ENV = dict(ForkFailureFlowTest.ENV, WORKFLOW_CONCLUSION="success")
+
+    def test_ci_xanh_pr_fork_khong_goi_jira_gemini_chi_comment_tinh(self):
+        pr = {"number": 5, "title": "COT-1 sua loi", "body": "COT-1", "user": {"login": "evil"},
+              "head": {"sha": "aaa", "ref": "COT-1-x", "repo": {"full_name": "evil/r"}}}
+        posted = []
+        with mock.patch.dict(os.environ, self.ENV, clear=True), \
+                mock.patch.object(t, "resolve_pull_request", return_value=(pr, None)), \
+                mock.patch.object(t, "read_ci_outcomes", return_value={
+                    "backend_tests": "success", "frontend_tests": "success", "frontend_build": "success"}), \
+                mock.patch.object(t, "fetch_jira_issue") as fetch_jira, \
+                mock.patch.object(t, "analyze_scope_and_acceptance") as scope, \
+                mock.patch.object(t, "call_gemini") as gemini, \
+                mock.patch.object(t, "create_jira_issue") as create_jira, \
+                mock.patch.object(t, "get_pr_changes") as changes, \
+                mock.patch.object(t, "post_github_comment", side_effect=lambda r, n, tk, body: posted.append(body) or True):
+            result = t.main()
+        for mocked in (fetch_jira, scope, gemini, create_jira, changes):
+            mocked.assert_not_called()
+        self.assertEqual(result, 0)
+        self.assertEqual(len(posted), 1)
+        self.assertIn("fork", posted[0])
+        self.assertNotIn("COT-1", posted[0])
+        self.assertNotIn("@evil", posted[0])
+
+    def test_pr_cung_repo_van_di_tiep_den_scope_guard(self):
+        pr = {"number": 6, "title": "COT-1 sua", "body": "", "user": {"login": "dev"},
+              "head": {"sha": "aaa", "ref": "COT-1-x", "repo": {"full_name": "o/r"}}}
+        env = dict(self.ENV, HEAD_REPO="o/r")
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(t, "resolve_pull_request", return_value=(pr, None)), \
+                mock.patch.object(t, "read_ci_outcomes", return_value={"backend_tests": "success"}), \
+                mock.patch.object(t, "fetch_jira_issue", return_value=("Task", "mo ta", "To Do", None)) as fetch_jira, \
+                mock.patch.object(t, "get_pr_changes", return_value=(["a.js"], "diff", None)), \
+                mock.patch.object(t, "analyze_scope_and_acceptance", return_value=("VERDICT: PASSED\nok", None)), \
+                mock.patch.object(t, "post_github_comment", return_value=True):
+            t.main()
+        fetch_jira.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

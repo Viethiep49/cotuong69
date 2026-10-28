@@ -459,6 +459,16 @@ def build_fork_failure_comment(pr_number, failed_parts):
     )
 
 
+def build_fork_notice_comment(pr_number):
+    """REV2-19: comment tĩnh cho PR từ fork khi CI xanh — không chứa dữ liệu Jira/AI/log nào."""
+    return (
+        f"### 🛡️ AI PR Gate: PR #{pr_number} đến từ fork\n\n"
+        f"CI tự động của PR này đã chạy xong. Vì PR đến từ fork nên bước đối chiếu Jira và "
+        f"đánh giá AI **không được chạy tự động** (job đó dùng secret của repository). "
+        f"Reviewer vui lòng xem xét phạm vi thay đổi thủ công.\n"
+    )
+
+
 def comment_or_fail(repo, pr_number, token, body, reason):
     """Fail-closed: không đăng được comment cũng là lỗi của gate."""
     if not post_github_comment(repo, pr_number, token, body):
@@ -533,14 +543,20 @@ def main():
     if not failed_parts and conclusion in ("failure", "timed_out"):
         failed_parts.append(f"CI ({conclusion} — chi tiết không có trong artifact)")
 
-    if failed_parts and is_fork_pr(repo, head_repo, pr):
-        # REV-18: PR từ fork — không đọc log, không gọi Gemini, không tạo Jira Bug
-        # (job này có secret Jira/Gemini; nội dung log do người ngoài kiểm soát).
-        print(f"❌ CI thất bại ở: {', '.join(failed_parts)} (PR từ fork)")
-        comment_or_fail(
-            repo, pr_number, token, build_fork_failure_comment(pr_number, failed_parts),
-            "Kiểm thử tự động thất bại (PR từ fork).",
-        )
+    if is_fork_pr(repo, head_repo, pr):
+        if failed_parts:
+            # REV-18: PR từ fork — không đọc log, không gọi Gemini, không tạo Jira Bug
+            # (job này có secret Jira/Gemini; nội dung log do người ngoài kiểm soát).
+            print(f"❌ CI thất bại ở: {', '.join(failed_parts)} (PR từ fork)")
+            comment_or_fail(
+                repo, pr_number, token, build_fork_failure_comment(pr_number, failed_parts),
+                "Kiểm thử tự động thất bại (PR từ fork).",
+            )
+        # REV2-19: CI xanh nhưng vẫn là PR từ fork -> KHÔNG chạy Scope Guard (đọc Jira + gọi Gemini
+        # bằng secret của repo, rồi đăng tóm tắt task Jira riêng tư lên PR công khai). Chỉ comment tĩnh.
+        notice("PR từ fork — bỏ qua Scope Guard (Jira/Gemini); chỉ đăng comment tĩnh.")
+        post_github_comment(repo, pr_number, token, build_fork_notice_comment(pr_number))
+        return 0
 
     if failed_parts:
         print(f"❌ CI thất bại ở: {', '.join(failed_parts)}")
