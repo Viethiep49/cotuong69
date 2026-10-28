@@ -28,6 +28,10 @@ class WebRtcPeerConnection {
     this.onRemoteStreamCallback = null;
     this.onIceCandidateCallback = null;
     this.onConnectionStateChangeCallback = null;
+    // FE-07: ICE candidate đến trước khi có remoteDescription phải xếp hàng rồi mới thêm
+    // (addIceCandidate khi chưa có remoteDescription sẽ ném lỗi và candidate bị mất).
+    this.remoteDescriptionSet = false;
+    this.pendingCandidates = [];
 
     if (this.pc) {
       this.initListeners();
@@ -97,6 +101,8 @@ class WebRtcPeerConnection {
       ? new RTCSessionDescription(sdpOffer)
       : sdpOffer;
     await this.pc.setRemoteDescription(remoteDesc);
+    this.remoteDescriptionSet = true;
+    await this.flushPendingCandidates();
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
     return this.pc.localDescription || answer;
@@ -108,17 +114,36 @@ class WebRtcPeerConnection {
       ? new RTCSessionDescription(sdpAnswer)
       : sdpAnswer;
     await this.pc.setRemoteDescription(remoteDesc);
+    this.remoteDescriptionSet = true;
+    await this.flushPendingCandidates();
   }
 
   async addIceCandidate(candidate) {
     if (!this.pc || !candidate) return;
+    if (!this.remoteDescriptionSet) {
+      this.pendingCandidates.push(candidate);
+      return;
+    }
+    await this.applyIceCandidate(candidate);
+  }
+
+  async applyIceCandidate(candidate) {
+    if (!this.pc) return;
     try {
       const iceCandidate = typeof RTCIceCandidate !== 'undefined'
         ? new RTCIceCandidate(candidate)
         : candidate;
       await this.pc.addIceCandidate(iceCandidate);
     } catch {
-      // Bỏ qua ứng viên ICE trùng lặp hoặc đến sớm
+      // Một candidate hỏng/trùng không được làm hỏng cả cuộc gọi
+    }
+  }
+
+  async flushPendingCandidates() {
+    const queued = this.pendingCandidates;
+    this.pendingCandidates = [];
+    for (const candidate of queued) {
+      await this.applyIceCandidate(candidate);
     }
   }
 
@@ -145,6 +170,8 @@ class WebRtcPeerConnection {
       this.pc = null;
     }
     this.remoteStream = null;
+    this.pendingCandidates = [];
+    this.remoteDescriptionSet = false;
     this.onRemoteStreamCallback = null;
     this.onIceCandidateCallback = null;
     this.onConnectionStateChangeCallback = null;

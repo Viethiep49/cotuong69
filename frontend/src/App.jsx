@@ -129,6 +129,8 @@ function App() {
     isMicMuted,
     isCamOff,
     isRemoteCamOff,
+    error: callError,
+    notice: callNotice,
     startCall,
     acceptCall,
     rejectCall,
@@ -505,6 +507,8 @@ function App() {
             isCamOff={isCamOff}
             isRemoteCamOff={isRemoteCamOff}
             isSpectator={readOnly}
+            error={callError}
+            notice={callNotice}
             userName={currentUserName || 'Bạn'}
             opponentName={opponentUserName || 'Đối thủ'}
             onStartCall={startCall}
