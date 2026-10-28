@@ -74,7 +74,7 @@ Không phát hiện test nào bị xoá hoặc làm yếu sai quy định.
 ## PHASE 0 — BẢO MẬT NGHIÊM TRỌNG (làm ngay, chặn mọi việc khác)
 
 ### SEC-01 · Mock OAuth token được chấp nhận ở production → chiếm tài khoản bất kỳ
-- **File**: `backend/src/application/services/oauthService.js:17-27`, `backend/src/application/useCases/oauthLogin.js:47-56`
+- **File**: `backend/src/application/services/oauthService.js:17-27`, `backend/src/application/use-cases/auth/oauthLogin.js:47-56` (trước CLEAN-03 nằm ở `application/useCases/`)
 - **Lỗi**: Mọi token bắt đầu bằng `mock_` được tin tưởng, không kiểm tra môi trường. Tấn công: `POST /api/auth/google {"credential":"mock_x:999:victim@mail.com:x"}` → nhận JWT của nạn nhân.
 - **Quyết định (đồ án)**: GIỮ token `mock_` để demo, nhưng chỉ bật khi được cho phép rõ ràng.
 - **Sửa**:
@@ -570,6 +570,6 @@ Ký hiệu: `[x]` đạt · `[~]` đã làm nhưng còn thiếu, phần thiếu 
 
 **Còn lại của plan gốc (làm sau Phase 4):**
 - [x] FE-06 · [x] FE-08 · [x] FE-07 · [x] FE-01 · [x] FE-05 · [x] FE-10
-- [ ] CLEAN-01 · [ ] CLEAN-02 · [ ] CLEAN-03 · [ ] CLEAN-04
+- [x] CLEAN-01 · [x] CLEAN-02 · [x] CLEAN-03 · [x] CLEAN-04
 
 **Lưu ý vận hành**: vì secret JWT mặc định đã công khai trong source, sau khi xong SEC-02 phải đặt `JWT_SECRET` mới trên mọi môi trường (mọi token cũ sẽ mất hiệu lực — đây là điều mong muốn). Nếu repo GitHub từng public hoặc có PR từ fork chạy qua workflow `ai-pr-test.yml`, hãy **xoay vòng (rotate) `JIRA_API_TOKEN` và `GEMINI_API_KEY`**.
