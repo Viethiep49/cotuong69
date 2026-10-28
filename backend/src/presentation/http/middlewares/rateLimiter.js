@@ -205,6 +205,22 @@ function getClientIp(request) {
   return remote ? rateLimitKeyForIp(remote) : 'unknown';
 }
 
+/**
+ * Demo trên một máy: mọi trình duyệt chung IP loopback, nên vài lần gõ sai mật khẩu là cả máy bị
+ * khoá đăng nhập 15 phút. Chỉ khi NODE_ENV=development (và không đứng sau proxy) mới bỏ giới hạn
+ * theo IP cho request đến từ chính máy này. Giới hạn làm chậm theo username vẫn giữ nguyên.
+ * @param {object} request
+ * @returns {boolean}
+ */
+function isDevLoopbackExempt(request) {
+  if (process.env.NODE_ENV !== 'development') return false;
+  if (String(process.env.TRUST_PROXY || '').toLowerCase() === 'true') return false;
+  const socket = request && (request.socket || request.connection);
+  const remote = normalizeIp(socket && socket.remoteAddress);
+  if (!remote) return false;
+  return remote === '::1' || /^127\./.test(remote);
+}
+
 // Giới hạn theo plan BE-13
 const loginLimiter = new SlidingWindowLimiter({ limit: 10, windowMs: 15 * 60 * 1000, name: 'login' });
 const registerLimiter = new SlidingWindowLimiter({ limit: 5, windowMs: 60 * 60 * 1000, name: 'register' });
@@ -258,6 +274,7 @@ if (cleanupTimer.unref) cleanupTimer.unref();
 module.exports = {
   SlidingWindowLimiter,
   getClientIp,
+  isDevLoopbackExempt,
   normalizeIp,
   rateLimitKeyForIp,
   loginSlowdownMs,

@@ -10,6 +10,7 @@ const { authenticateRequest, authenticateRequestWithSession } = require('../midd
 const {
   enforce,
   getClientIp,
+  isDevLoopbackExempt,
   loginLimiter,
   registerLimiter,
   loginUsernameLimiter,
@@ -104,7 +105,8 @@ function createAuthHandler({
       }
 
       // BE-13: 5 lần đăng ký / giờ / IP
-      if (rejectIfRateLimited(request, response, registerLimiter, `register:${getClientIp(request)}`)) return;
+      if (!isDevLoopbackExempt(request)
+        && rejectIfRateLimited(request, response, registerLimiter, `register:${getClientIp(request)}`)) return;
 
       let payload;
       try {
@@ -150,8 +152,10 @@ function createAuthHandler({
       // REV2-17: đăng nhập thành công KHÔNG xoá bộ đếm của IP (nếu xoá thì kẻ xấu xen 1 lần đăng nhập
       // vào tài khoản của mình giữa mỗi 9 lần đoán để không bao giờ bị chặn); chỉ hoàn lại lượt của
       // chính request đó.
+      // Demo dev trên một máy: không đếm theo IP loopback (xem isDevLoopbackExempt)
+      const ipExempt = isDevLoopbackExempt(request);
       const loginIpKey = `login-ip:${getClientIp(request)}`;
-      const ipAttempt = loginLimiter.consume(loginIpKey);
+      const ipAttempt = ipExempt ? { allowed: true, ts: null } : loginLimiter.consume(loginIpKey);
       if (!ipAttempt.allowed) {
         const retryAfterSeconds = Math.max(1, Math.ceil(ipAttempt.retryAfterMs / 1000)) || 60;
         response.setHeader?.('Retry-After', String(retryAfterSeconds));
@@ -162,7 +166,7 @@ function createAuthHandler({
         });
         return;
       }
-      let ipCounted = true;
+      let ipCounted = !ipExempt;
       const refundIp = () => {
         if (!ipCounted) return;
         ipCounted = false;

@@ -169,3 +169,53 @@ describe('REV2-17: đăng nhập thành công không xoá bộ đếm của IP',
     }
   });
 });
+
+describe('REV2-26: demo dev trên một máy không bị khoá đăng nhập theo IP loopback', () => {
+  let previousEnv;
+  beforeEach(() => {
+    resetAll();
+    previousEnv = { NODE_ENV: process.env.NODE_ENV, TRUST_PROXY: process.env.TRUST_PROXY };
+  });
+  after(() => resetAll());
+
+  const restoreEnv = () => {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+
+  test('NODE_ENV=development: 15 lần gõ sai từ 127.0.0.1 vẫn không bị 429, đăng nhập đúng vẫn được', async () => {
+    process.env.NODE_ENV = 'development';
+    delete process.env.TRUST_PROXY;
+    const { post, close } = await startServer({
+      execute: async (payload) => {
+        if (payload.password === 'dung') return { success: true };
+        throw invalidCredentials();
+      },
+    });
+    try {
+      for (let i = 0; i < 15; i += 1) {
+        assert.equal(await post({ username: `user${i % 3}`, password: 'sai' }), 401);
+      }
+      assert.equal(await post({ username: 'user0', password: 'dung' }), 200);
+    } finally {
+      await close();
+      restoreEnv();
+    }
+  });
+
+  test('ngoài development (vd production) vẫn khoá theo IP sau 10 lần sai', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.TRUST_PROXY;
+    const { post, close } = await startServer({ execute: async () => { throw invalidCredentials(); } });
+    try {
+      const codes = [];
+      for (let i = 0; i < 11; i += 1) codes.push(await post({ username: `user${i}`, password: 'sai' }));
+      assert.equal(codes[10], 429, codes.join(','));
+    } finally {
+      await close();
+      restoreEnv();
+    }
+  });
+});
