@@ -320,25 +320,27 @@ describe('Nghiệm thu Task COT-624: Signaling Server cho WebRTC chuyển tiếp
       hostWs.send(JSON.stringify({ type: 'call:request' }));
       await waitForMessage(oppMsgs, (m) => m.type === 'CallIncoming');
       oppWs.send(JSON.stringify({ type: 'call:accept' }));
-      await waitForMessage(hostMsgs, (m) => m.type === 'CallAccepted');
+      const accepted = await waitForMessage(hostMsgs, (m) => m.type === 'CallAccepted');
+      // REV-12: signaling bắt buộc mang callId của cuộc gọi đã được chấp nhận
+      const { callId } = accepted;
 
       // 3. Caller gửi SDP Offer -> Callee nhận CallOffer
       const fakeSdpOffer = { type: 'offer', sdp: 'v=0\r\no=caller 1234 2 IN IP4 127.0.0.1...' };
-      hostWs.send(JSON.stringify({ type: 'call:offer', sdp: fakeSdpOffer }));
+      hostWs.send(JSON.stringify({ type: 'call:offer', callId, sdp: fakeSdpOffer }));
       const receivedOffer = await waitForMessage(oppMsgs, (m) => m.type === 'CallOffer');
       assert.deepEqual(receivedOffer.sdp, fakeSdpOffer);
       assert.equal(receivedOffer.fromUserId, hostUser.id);
 
       // 4. Callee gửi SDP Answer -> Caller nhận CallAnswer
       const fakeSdpAnswer = { type: 'answer', sdp: 'v=0\r\no=callee 5678 2 IN IP4 127.0.0.1...' };
-      oppWs.send(JSON.stringify({ type: 'call:answer', sdp: fakeSdpAnswer }));
+      oppWs.send(JSON.stringify({ type: 'call:answer', callId, sdp: fakeSdpAnswer }));
       const receivedAnswer = await waitForMessage(hostMsgs, (m) => m.type === 'CallAnswer');
       assert.deepEqual(receivedAnswer.sdp, fakeSdpAnswer);
       assert.equal(receivedAnswer.fromUserId, oppUser.id);
 
       // 5. Hai bên gửi ICE Candidates
       const fakeCandidate = { candidate: 'candidate:1 1 UDP 2130706431 192.168.1.100 50000 typ host', sdpMid: '0', sdpMLineIndex: 0 };
-      hostWs.send(JSON.stringify({ type: 'call:candidate', candidate: fakeCandidate }));
+      hostWs.send(JSON.stringify({ type: 'call:candidate', callId, candidate: fakeCandidate }));
       const receivedCandidate = await waitForMessage(oppMsgs, (m) => m.type === 'CallCandidate');
       assert.deepEqual(receivedCandidate.candidate, fakeCandidate);
 

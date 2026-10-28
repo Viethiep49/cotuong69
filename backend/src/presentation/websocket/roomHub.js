@@ -28,11 +28,12 @@ function isValidCandidate(candidate) {
 }
 
 /**
- * BE-07: message signaling phải trỏ đúng cuộc gọi đang diễn ra.
+ * BE-07 + REV-12: message signaling phải mang callId và khớp đúng cuộc gọi đang diễn ra.
+ * Trước đây thiếu callId vẫn được coi là hợp lệ -> relay nhầm cho cuộc gọi khác.
  */
 function isSameCall(payload, room) {
   if (!room || !room.videoCall) return false;
-  if (payload.callId === undefined || payload.callId === null || payload.callId === '') return true;
+  if (!payload || payload.callId === undefined || payload.callId === null || payload.callId === '') return false;
   return String(payload.callId) === String(room.videoCall.callId);
 }
 
@@ -180,6 +181,14 @@ class RoomHub {
         lastPong: Date.now(),
       };
       this.clients.set(socket, clientMeta);
+
+      // REV-12: heartbeat ở mức protocol (ws.ping) -> trình duyệt tự trả pong frame,
+      // không cần code client. Pong frame làm mới lastSeen/lastPong.
+      socket.on('pong', () => {
+        const now = Date.now();
+        clientMeta.lastSeen = now;
+        clientMeta.lastPong = now;
+      });
 
       // Ánh xạ ConnectionId <-> UserId
       this.connectionUsers.set(connectionId, userId);
@@ -844,11 +853,11 @@ class RoomHub {
     }
 
     if (type === 'call:offer' || type === 'webrtc:offer') {
-      if (!room.videoCall || !['RINGING', 'CONNECTED'].includes(room.videoCall.status)) {
+      if (!room.videoCall || room.videoCall.status !== 'CONNECTED') {
         this.send(socket, {
           type: 'error',
           code: 'CALL_NOT_ACTIVE',
-          message: 'Không có phiên cuộc gọi đang hoạt động để gửi SDP Offer.',
+          message: 'Chưa có cuộc gọi nào được chấp nhận để gửi SDP Offer.',
         });
         return;
       }
@@ -875,11 +884,11 @@ class RoomHub {
     }
 
     if (type === 'call:answer' || type === 'webrtc:answer') {
-      if (!room.videoCall || !['RINGING', 'CONNECTED'].includes(room.videoCall.status)) {
+      if (!room.videoCall || room.videoCall.status !== 'CONNECTED') {
         this.send(socket, {
           type: 'error',
           code: 'CALL_NOT_ACTIVE',
-          message: 'Không có phiên cuộc gọi đang hoạt động để gửi SDP Answer.',
+          message: 'Chưa có cuộc gọi nào được chấp nhận để gửi SDP Answer.',
         });
         return;
       }
@@ -906,11 +915,11 @@ class RoomHub {
     }
 
     if (type === 'call:candidate' || type === 'webrtc:candidate') {
-      if (!room.videoCall || !['RINGING', 'CONNECTED'].includes(room.videoCall.status)) {
+      if (!room.videoCall || room.videoCall.status !== 'CONNECTED') {
         this.send(socket, {
           type: 'error',
           code: 'CALL_NOT_ACTIVE',
-          message: 'Không có phiên cuộc gọi đang hoạt động để gửi ICE Candidate.',
+          message: 'Chưa có cuộc gọi nào được chấp nhận để gửi ICE Candidate.',
         });
         return;
       }
@@ -1131,11 +1140,13 @@ class RoomHub {
         continue;
       }
 
-      // Gửi gói Ping định kỳ mỗi 5 giây
-      this.send(socket, {
-        type: 'ping',
-        timestamp: now,
-      });
+      // REV-12: gửi ping frame của protocol WebSocket (không phải JSON {type:'ping'}
+      // mà trình duyệt không tự trả lời). Vẫn chấp nhận {type:'pong'} JSON cũ ở _handleMessage.
+      try {
+        socket.ping();
+      } catch {
+        try { socket.terminate(); } catch {}
+      }
     }
   }
 

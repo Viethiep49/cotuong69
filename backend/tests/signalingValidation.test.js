@@ -40,7 +40,7 @@ describe('BE-07: validate signaling + giới hạn payload', () => {
 
     test('isSameCall chỉ cho phép message của đúng cuộc gọi', () => {
       const room = { videoCall: { callId: 'call_1' } };
-      assert.equal(isSameCall({}, room), true, 'không gửi callId thì giữ tương thích');
+      assert.equal(isSameCall({}, room), false, 'REV-12: thiếu callId thì bị từ chối');
       assert.equal(isSameCall({ callId: 'call_1' }, room), true);
       assert.equal(isSameCall({ callId: 'call_khac' }, room), false);
       assert.equal(isSameCall({ callId: 'call_1' }, { videoCall: null }), false);
