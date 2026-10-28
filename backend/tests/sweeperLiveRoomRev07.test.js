@@ -80,6 +80,8 @@ describe('REV-07: sweeper và phòng SYSTEM_ERROR', () => {
     assert.equal(room.players.red, null, 'ghế Đỏ phải được trả');
     assert.equal(room.players.black, null, 'ghế Đen phải được trả');
 
-    assert.equal(roomManager.sweep(Date.now() + 31 * 60 * 1000), 1, 'phòng trống phải bị sweeper dọn');
+    // REV2-04: phòng không còn ai bị đóng ngay (không cần chờ sweeper) -> sweeper không còn gì để dọn
+    assert.equal(roomManager.findByCode(room.code), null, 'phòng trống phải được đóng');
+    assert.equal(roomManager.sweep(Date.now() + 31 * 60 * 1000), 0);
   });
 });
