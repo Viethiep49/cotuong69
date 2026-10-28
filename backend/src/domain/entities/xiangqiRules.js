@@ -1,4 +1,38 @@
+/**
+ * Luật cờ Tướng cho PvP (Room, trận demo COT-615).
+ *
+ * CLEAN-01: file này chỉ là ADAPTER. Toàn bộ luật đi quân / chiếu tướng nằm ở một nơi duy nhất
+ * là `domain/rules/*` (lưới `board[row][col] = { type: 'K'|'A'|..., color }`, dùng chung với PvE).
+ * Ở đây chỉ làm 3 việc:
+ *   1. đổi danh sách quân PvP ({ id, color, type: 'general'..., position: 'e3' }) sang lưới;
+ *   2. giữ nguyên API cũ (getLegalMoveError / hasLegalMove / isInCheck / parsePosition / positionOf)
+ *      và các thông báo lỗi tiếng Việt mà Room / cot615Match đang dùng;
+ *   3. giữ vài khác biệt nghiệp vụ của PvP (xem các ghi chú bên dưới).
+ *
+ * Quy ước: file 'a'..'i' <-> col 0..8, rank 0..9 <-> row 0..9 (Đỏ ở rank 0–4, đi lên).
+ */
+const { createEmptyBoard } = require('../rules/board');
+const {
+  getPseudoMoves,
+  applyMove,
+  isInCheck: isInCheckOnGrid,
+} = require('../rules/moveGenerator');
+const { findKing, isInPalace } = require('../rules/kingMoves');
+
 const FILES = 'abcdefghi';
+
+// Tên quân PvP -> ký hiệu quân của domain/rules. Loại quân lạ vẫn được đặt lên bàn (làm vật cản)
+// nhưng không có nước đi, giống hành vi cũ.
+const GRID_TYPE = {
+  general: 'K',
+  advisor: 'A',
+  elephant: 'E',
+  horse: 'H',
+  chariot: 'R',
+  cannon: 'C',
+  soldier: 'P',
+};
+const UNKNOWN_GRID_TYPE = '?';
 
 function parsePosition(position) {
   // SEC-03: chỉ chấp nhận chữ thường ('e3'); toạ độ in hoa trước đây lọt qua rồi gây lỗi
@@ -12,108 +46,78 @@ function positionOf(file, rank) {
   return `${FILES[file]}${rank}`;
 }
 
-function pieceAt(pieces, file, rank) {
-  return pieces.find((piece) => {
+/**
+ * Đổi danh sách quân PvP sang lưới của domain/rules.
+ * Quân có `position` sai định dạng bị bỏ qua; hai quân trùng ô thì quân đứng trước thắng
+ * (giống `pieces.find` trước đây).
+ */
+function toGridBoard(pieces) {
+  const board = createEmptyBoard();
+  for (const piece of pieces) {
     const position = parsePosition(piece.position);
-    return position?.file === file && position.rank === rank;
-  });
-}
-
-function insideBoard(file, rank) {
-  return file >= 0 && file <= 8 && rank >= 0 && rank <= 9;
-}
-
-function inPalace(color, file, rank) {
-  return file >= 3 && file <= 5 &&
-    (color === 'red' ? rank >= 0 && rank <= 2 : rank >= 7 && rank <= 9);
-}
-
-function countBetween(pieces, from, to) {
-  const fileStep = Math.sign(to.file - from.file);
-  const rankStep = Math.sign(to.rank - from.rank);
-  let file = from.file + fileStep;
-  let rank = from.rank + rankStep;
-  let count = 0;
-
-  while (file !== to.file || rank !== to.rank) {
-    if (pieceAt(pieces, file, rank)) count += 1;
-    file += fileStep;
-    rank += rankStep;
+    if (!position || board[position.rank][position.file]) continue;
+    board[position.rank][position.file] = {
+      type: GRID_TYPE[piece.type] || UNKNOWN_GRID_TYPE,
+      color: piece.color,
+    };
   }
-  return count;
+  return board;
 }
 
-function isPseudoLegal(piece, from, to, pieces, ignoreTargetSide = false) {
-  if (!insideBoard(to.file, to.rank) || (from.file === to.file && from.rank === to.rank)) {
-    return false;
-  }
-
-  const target = pieceAt(pieces, to.file, to.rank);
-  if (!ignoreTargetSide && target?.color === piece.color) return false;
-
-  const fileDistance = Math.abs(to.file - from.file);
-  const rankDistance = Math.abs(to.rank - from.rank);
-  const sameLine = from.file === to.file || from.rank === to.rank;
-
-  switch (piece.type) {
-    case 'general':
-      if (fileDistance + rankDistance === 1 && inPalace(piece.color, to.file, to.rank)) return true;
-      return target?.type === 'general' && from.file === to.file &&
-        countBetween(pieces, from, to) === 0;
-    case 'advisor':
-      return fileDistance === 1 && rankDistance === 1 && inPalace(piece.color, to.file, to.rank);
-    case 'elephant': {
-      if (fileDistance !== 2 || rankDistance !== 2) return false;
-      const ownSide = piece.color === 'red' ? to.rank <= 4 : to.rank >= 5;
-      return ownSide && !pieceAt(pieces, (from.file + to.file) / 2, (from.rank + to.rank) / 2);
-    }
-    case 'horse': {
-      if (!((fileDistance === 2 && rankDistance === 1) || (fileDistance === 1 && rankDistance === 2))) {
-        return false;
-      }
-      const legFile = fileDistance === 2 ? from.file + Math.sign(to.file - from.file) : from.file;
-      const legRank = rankDistance === 2 ? from.rank + Math.sign(to.rank - from.rank) : from.rank;
-      return !pieceAt(pieces, legFile, legRank);
-    }
-    case 'chariot':
-      return sameLine && countBetween(pieces, from, to) === 0;
-    case 'cannon': {
-      if (!sameLine) return false;
-      const screens = countBetween(pieces, from, to);
-      return target ? screens === 1 : screens === 0;
-    }
-    case 'soldier': {
-      const forward = piece.color === 'red' ? 1 : -1;
-      if (fileDistance === 0 && to.rank - from.rank === forward) return true;
-      const crossedRiver = piece.color === 'red' ? from.rank >= 5 : from.rank <= 4;
-      return crossedRiver && rankDistance === 0 && fileDistance === 1;
-    }
-    default:
-      return false;
-  }
+/**
+ * Tướng bị chiếu (bị quân địch tấn công hoặc hai Tướng đối mặt) theo domain/rules.
+ *
+ * KHÁC BIỆT CÓ CHỦ ĐÍCH so với domain/rules: bàn cờ thiếu Tướng của `color` thì domain/rules
+ * trả false (PvE không bao giờ gặp thế cờ này), còn PvP trả TRUE. Chọn true vì an toàn hơn:
+ * thiếu Tướng nghĩa là bên đó đã thua nên mọi nước đi đều bị coi là không hợp lệ và
+ * `hasLegalMove` trả false (kết thúc ván), thay vì cho phép đi tiếp một ván không còn Tướng.
+ */
+function isInCheckOnBoard(board, color) {
+  if (!findKing(board, color)) return true;
+  return isInCheckOnGrid(board, color);
 }
 
 function isInCheck(pieces, color) {
-  const general = pieces.find((piece) => piece.color === color && piece.type === 'general');
-  if (!general) return true;
-  const target = parsePosition(general.position);
-
-  return pieces.some((attacker) => {
-    if (attacker.color === color) return false;
-    const from = parsePosition(attacker.position);
-    return from && isPseudoLegal(attacker, from, target, pieces, true);
-  });
+  return isInCheckOnBoard(toGridBoard(pieces), color);
 }
 
-function canMoveLegally(pieces, piece, from, to) {
-  if (!isPseudoLegal(piece, from, to, pieces)) return false;
-  if (pieceAt(pieces, to.file, to.rank)?.type === 'general') return false;
+function leavesGeneralSafe(board, color, from, to) {
+  const next = applyMove(board, {
+    from: { row: from.rank, col: from.file },
+    to: { row: to.rank, col: to.file },
+  }).board;
+  return !isInCheckOnBoard(next, color);
+}
 
-  const targetPosition = positionOf(to.file, to.rank);
-  const nextPieces = pieces
-    .filter((candidate) => candidate.id !== piece.id && candidate.position !== targetPosition)
-    .concat({ ...piece, position: targetPosition });
-  return !isInCheck(nextPieces, piece.color);
+function hasPieceBetween(board, from, to) {
+  // Chỉ dùng cho hai ô cùng cột (Tướng "bay" nhìn nhau)
+  const low = Math.min(from.rank, to.rank) + 1;
+  const high = Math.max(from.rank, to.rank);
+  for (let row = low; row < high; row += 1) {
+    if (board[row][from.file]) return true;
+  }
+  return false;
+}
+
+/**
+ * Nước đi có đúng cách đi của quân (chưa xét Tướng mình có bị chiếu) hay không.
+ * Ngoài nước giả hợp lệ của domain/rules còn nhận 2 trường hợp mà domain/rules đã loại sẵn trong
+ * bước sinh nước của Tướng, để giữ đúng thông báo lỗi cũ của PvP:
+ *  - Tướng đi 1 bước trong Cung vào ô làm hai Tướng đối mặt -> báo "Tướng bị chiếu" (không phải "sai luật");
+ *  - Tướng "bay" ăn Tướng đối phương cùng cột không có quân cản -> báo "Không được bắt Tướng trực tiếp".
+ */
+function isPseudoLegal(board, piece, from, to) {
+  const reachable = getPseudoMoves(board, from.rank, from.file)
+    .some((move) => move.row === to.rank && move.col === to.file);
+  if (reachable || piece.type !== 'K') return reachable;
+
+  const target = board[to.rank][to.file];
+  const isPalaceStep = Math.abs(to.file - from.file) + Math.abs(to.rank - from.rank) === 1 &&
+    isInPalace(to.rank, to.file, piece.color);
+  if (isPalaceStep) return !target || target.color !== piece.color;
+
+  return target?.type === 'K' && target.color !== piece.color &&
+    from.file === to.file && !hasPieceBetween(board, from, to);
 }
 
 function getLegalMoveError(pieces, color, fromPosition, toPosition) {
@@ -121,25 +125,30 @@ function getLegalMoveError(pieces, color, fromPosition, toPosition) {
   const to = parsePosition(toPosition);
   if (!from || !to) return 'Tọa độ ô cờ không hợp lệ.';
 
-  const piece = pieceAt(pieces, from.file, from.rank);
+  const board = toGridBoard(pieces);
+  const piece = board[from.rank][from.file];
   if (!piece) return 'Ô nguồn không có quân cờ.';
   if (piece.color !== color) return 'Bạn chỉ được đi quân thuộc phe của mình.';
-  if (pieceAt(pieces, to.file, to.rank)?.color === color) return 'Ô đích đang có quân cùng phe.';
-  if (!isPseudoLegal(piece, from, to, pieces)) return 'Nước đi không đúng luật của quân cờ.';
+  const target = board[to.rank][to.file];
+  if (target?.color === color) return 'Ô đích đang có quân cùng phe.';
+  if (!isPseudoLegal(board, piece, from, to)) return 'Nước đi không đúng luật của quân cờ.';
 
-  const target = pieceAt(pieces, to.file, to.rank);
-  if (target?.type === 'general') return 'Không được bắt Tướng trực tiếp.';
-  if (!canMoveLegally(pieces, piece, from, to)) return 'Nước đi khiến Tướng phe bạn bị chiếu.';
+  // Luật PvP: không bao giờ được "ăn" Tướng, kể cả khi thế cờ đã sai (khác PvE chỉ lọc theo chiếu)
+  if (target?.type === 'K') return 'Không được bắt Tướng trực tiếp.';
+  if (!leavesGeneralSafe(board, color, from, to)) return 'Nước đi khiến Tướng phe bạn bị chiếu.';
   return null;
 }
 
 function hasLegalMove(pieces, color) {
-  for (const piece of pieces) {
-    if (piece.color !== color) continue;
-    const from = parsePosition(piece.position);
-    for (let file = 0; file <= 8; file += 1) {
-      for (let rank = 0; rank <= 9; rank += 1) {
-        if (canMoveLegally(pieces, piece, from, { file, rank })) return true;
+  const board = toGridBoard(pieces);
+  for (let row = 0; row < board.length; row += 1) {
+    for (let col = 0; col < board[row].length; col += 1) {
+      const piece = board[row][col];
+      if (!piece || piece.color !== color) continue;
+      const from = { file: col, rank: row };
+      for (const move of getPseudoMoves(board, row, col)) {
+        if (board[move.row][move.col]?.type === 'K') continue;
+        if (leavesGeneralSafe(board, color, from, { file: move.col, rank: move.row })) return true;
       }
     }
   }
