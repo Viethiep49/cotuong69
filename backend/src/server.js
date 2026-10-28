@@ -4,7 +4,13 @@ require('dotenv').config();
 const http = require('node:http');
 const { URL } = require('node:url');
 const { WebSocketServer } = require('ws');
-const { applyMatchMove, createCot615Match, getPublicMatchState } = require('./domain/entities/cot615Match');
+const {
+  applyMatchMove,
+  checkClockTimeout,
+  createCot615Match,
+  getPublicMatchState,
+  startCot615Match,
+} = require('./domain/entities/cot615Match');
 const { createMatchesHandler } = require('./presentation/http/routes/matches.routes');
 const { createAuthHandler } = require('./presentation/http/routes/auth.routes');
 const { createUserHandler } = require('./presentation/http/routes/user.routes');
@@ -24,6 +30,19 @@ function demoMatchEnabled() {
   return process.env.ENABLE_DEMO_MATCH === 'true';
 }
 
+/**
+ * REV-19: đồng hồ mỗi bên của trận demo (giây). Mặc định 600 để demo không bị gấp;
+ * kẹp trong [30, 3600].
+ */
+function demoClockSeconds() {
+  const value = Number(process.env.DEMO_CLOCK_SECONDS);
+  if (!Number.isFinite(value) || value <= 0) return 600;
+  return Math.min(3600, Math.max(30, Math.floor(value)));
+}
+
+// REV-19: trận demo kết thúc xong thì tự mở ván mới sau chừng này mili-giây
+const DEMO_RESET_DELAY_MS = 10 * 1000;
+
 // SEC-03: không để một promise bị reject làm chết cả server
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason);
@@ -36,10 +55,39 @@ function createServer(options = {}) {
   // BE-07: giới hạn payload 64KB cho WS trận mẫu
   const webSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
   const roomHub = options.roomHub || defaultRoomHub;
+  // REV-19: chỉ trận do server tạo (không phải match test truyền vào) mới tự reset ván mới
+  const autoResetMatch = !options.match;
+  const newDemoMatch = () => createCot615Match(now(), {
+    waitForPlayers: true,
+    clockSeconds: demoClockSeconds(),
+  });
   const getCurrentMatch = () => {
-    if (!match) match = createCot615Match(now());
+    if (!match) {
+      // REV-19: đồng hồ chỉ chạy khi cả Đỏ và Đen đã kết nối (xem maybeStartMatch)
+      match = newDemoMatch();
+      maybeStartMatch();
+    } else if (autoResetMatch) {
+      resetFinishedMatchIfDue();
+    }
     return match;
   };
+
+  // REV-19: đủ 2 người chơi (Đỏ + Đen) mới bắt đầu đếm ngược/chạy đồng hồ
+  function maybeStartMatch() {
+    if (!match) return;
+    const occupied = new Set([...clients.values()].filter(Boolean));
+    if (occupied.has('red') && occupied.has('black')) startCot615Match(match, now());
+  }
+
+  // REV-19: ván demo kết thúc quá 10 giây thì mở ván mới (không phải restart backend)
+  function resetFinishedMatchIfDue() {
+    checkClockTimeout(match, now());
+    if (match.status !== 'completed') return;
+    const finishedAt = Date.parse(match.finishedAt);
+    if (Number.isFinite(finishedAt) && now() - finishedAt < DEMO_RESET_DELAY_MS) return;
+    match = newDemoMatch();
+    maybeStartMatch();
+  }
   const matchesHandler = createMatchesHandler({
     getMatch: getCurrentMatch,
     now,
@@ -158,6 +206,7 @@ function createServer(options = {}) {
 
   function broadcastState() {
     if (!match) return;
+    getCurrentMatch(); // REV-19: có thể tự reset ván đã kết thúc
     const state = getPublicMatchState(match, now());
     for (const [client, color] of clients) {
       send(client, { type: 'state', state, color, readOnly: color === null });
@@ -257,6 +306,7 @@ function createServer(options = {}) {
   webSockets.on('connection', (client) => {
     const color = assignColor();
     clients.set(client, color);
+    maybeStartMatch(); // REV-19: người thứ hai vào -> bắt đầu đếm ngược
     send(client, {
       type: 'welcome',
       color,

@@ -1,6 +1,7 @@
 require('./helpers/testEnv.js');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const WebSocket = require('ws');
 const { createCot615Match, getPublicMatchState } = require('../src/domain/entities/cot615Match');
 const { createServer } = require('../src/server');
 
@@ -47,7 +48,9 @@ test('read-only match endpoint returns the assigned match state', async (t) => {
   let now = Date.parse('2026-10-15T00:00:00.000Z');
   const server = createServer({ now: () => now });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const sockets = [];
   t.after(() => new Promise((resolve, reject) => {
+    sockets.forEach((s) => s.terminate()); // REV-19: đóng WS trước khi đóng server
     server.close((error) => (error ? reject(error) : resolve()));
   }));
 
@@ -61,7 +64,26 @@ test('read-only match endpoint returns the assigned match state', async (t) => {
   // CLEAN-05: CORS theo whitelist -> phản chiếu đúng origin được phép (không còn '*')
   assert.equal(response.headers.get('access-control-allow-origin'), 'http://localhost:3000');
   assert.equal(match.board.length, 32);
-  assert.equal(match.countdownSeconds, 3);
+  // REV-19: trận chờ đủ 2 người, chưa có đếm ngược / đồng hồ chưa chạy
+  assert.equal(match.waitingForPlayers, true);
+  assert.equal(match.countdownSeconds, null);
+
+  now += 4000;
+  const stillWaiting = await (await fetch(`http://127.0.0.1:${address.port}/api/matches/COT-615`)).json();
+  assert.equal(stillWaiting.status, 'starting');
+  assert.equal(stillWaiting.waitingForPlayers, true);
+
+  // Cả Đỏ và Đen kết nối -> đếm ngược 3 giây rồi mới chạy đồng hồ
+  for (let i = 0; i < 2; i += 1) {
+    const socket = new WebSocket(`ws://127.0.0.1:${address.port}/api/matches/COT-615/ws`);
+    sockets.push(socket);
+    await new Promise((resolve, reject) => {
+      socket.once('message', resolve);
+      socket.once('error', reject);
+    });
+  }
+  const counting = await (await fetch(`http://127.0.0.1:${address.port}/api/matches/COT-615`)).json();
+  assert.equal(counting.countdownSeconds, 3);
 
   now += 4000;
   const activeResponse = await fetch(`http://127.0.0.1:${address.port}/api/matches/COT-615`);
