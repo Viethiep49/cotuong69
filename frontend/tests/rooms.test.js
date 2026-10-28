@@ -130,19 +130,19 @@ describe('Nghiệm thu Task COT-597: Giao diện Danh sách phòng và Tìm ki�
     // Dưới 6 số
     await assert.rejects(
       async () => { await api.joinRoomByCode('12345'); },
-      { message: 'Mã phòng phải bao gồm đúng 6 chữ số (0-9).' }
+      { message: 'Mã phòng phải gồm 6 chữ số (phòng công khai) hoặc 10 ký tự chữ và số (phòng riêng tư).' }
     );
 
     // Chứa chữ cái
     await assert.rejects(
       async () => { await api.joinRoomByCode('12345A'); },
-      { message: 'Mã phòng phải bao gồm đúng 6 chữ số (0-9).' }
+      { message: 'Mã phòng phải gồm 6 chữ số (phòng công khai) hoặc 10 ký tự chữ và số (phòng riêng tư).' }
     );
 
     // Quá 6 số
     await assert.rejects(
       async () => { await api.joinRoomByCode('1234567'); },
-      { message: 'Mã phòng phải bao gồm đúng 6 chữ số (0-9).' }
+      { message: 'Mã phòng phải gồm 6 chữ số (phòng công khai) hoặc 10 ký tự chữ và số (phòng riêng tư).' }
     );
   });
 

@@ -98,7 +98,8 @@ describe('Nghiệm thu Task COT-584: Code layout tổng thể Sảnh chờ (Lobb
       assert.ok(indexHtml.includes('id="createRoomModalBtn"'), 'Có nút Tạo Room nhanh');
       assert.ok(indexHtml.includes('id="roomCodeInput"'), 'Có ô nhập mã phòng nhanh');
       assert.ok(indexHtml.includes('id="joinCodeForm"'), 'Có Form nhập mã phòng');
-      assert.ok(indexHtml.includes('maxlength="6"'), 'Ô nhập mã giới hạn tối đa 6 ký tự');
+      // BE-14: phòng riêng tư có mã 10 ký tự nên ô nhập cho phép tối đa 10 ký tự
+      assert.ok(indexHtml.includes('maxlength="10"'), 'Ô nhập mã giới hạn tối đa 10 ký tự');
     });
   });
 

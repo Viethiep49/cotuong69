@@ -3,6 +3,29 @@
  * Điều khiển hiển thị danh sách phòng, validation form tìm kiếm 6 số, và điều hướng.
  */
 
+// BE-14: định dạng mã phòng — PHẢI trùng src/domain/roomCode.js (test room-code kiểm tra hai bản giống nhau).
+//  - Công khai: 6 chữ số
+//  - Riêng tư : 10 ký tự Crockford base32 (0-9, A-Z trừ I, L, O, U)
+const PUBLIC_ROOM_CODE = /^\d{6}$/;
+const PRIVATE_ROOM_CODE = /^[0-9A-HJKMNP-TV-Z]{10}$/;
+
+/** Bỏ khoảng trắng/gạch ngang, chuyển chữ hoa. */
+function normalizeRoomCode(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/[\s-]/g, '').toUpperCase();
+}
+
+function isValidRoomCode(raw) {
+  const code = normalizeRoomCode(raw);
+  return PUBLIC_ROOM_CODE.test(code) || PRIVATE_ROOM_CODE.test(code);
+}
+
+/** Khi đang gõ: chỉ giữ chữ/số, tự viết hoa, tối đa 10 ký tự. */
+function sanitizeRoomCodeInput(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/[^0-9a-zA-Z]/g, '').toUpperCase().slice(0, 10);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const apiService = new window.RoomApiService();
 
@@ -273,8 +296,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Validate realtime khi người dùng nhập mã phòng
     roomCodeInput.addEventListener('input', (e) => {
-      // Chỉ cho phép nhập ký tự số
-      e.target.value = e.target.value.replace(/\D/g, '');
+      // BE-14: phòng công khai 6 số, phòng riêng tư 10 ký tự base32 -> giữ chữ/số, tự viết hoa, tối đa 10
+      e.target.value = sanitizeRoomCodeInput(e.target.value);
       clearInputError();
     });
 
@@ -1003,17 +1026,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // REV-16: bắt buộc đăng nhập mới được vào phòng bằng mã
     if (!requireLoginToJoin()) return;
 
-    const rawCode = roomCodeInput.value.trim();
+    const rawCode = normalizeRoomCode(roomCodeInput.value);
 
     // Validate 1: Kiểm tra mã trống
     if (!rawCode) {
-      showInputError('Vui lòng nhập mã phòng gồm 6 chữ số.');
+      showInputError('Vui lòng nhập mã phòng (6 chữ số, hoặc 10 ký tự nếu là phòng riêng tư).');
       return;
     }
 
-    // Validate 2: Kiểm tra định dạng 6 chữ số
-    if (!/^\d{6}$/.test(rawCode)) {
-      showInputError('Mã phòng không hợp lệ! Vui lòng nhập đúng 6 chữ số (ví dụ: 102938).');
+    // Validate 2: BE-14 — 6 chữ số (công khai) HOẶC 10 ký tự base32 Crockford (riêng tư), không phân biệt hoa/thường
+    if (!isValidRoomCode(rawCode)) {
+      showInputError(
+        /^\d+$/.test(rawCode)
+          ? 'Mã phòng không hợp lệ! Mã phòng công khai gồm đúng 6 chữ số (ví dụ: 102938).'
+          : 'Mã phòng không hợp lệ! Mã phòng riêng tư gồm đúng 10 ký tự chữ và số (ví dụ: 7K3M9QX2AB).'
+      );
       return;
     }
 

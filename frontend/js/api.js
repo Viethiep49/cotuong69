@@ -284,9 +284,10 @@ class RoomApiService {
       throw new Error('Mã phòng không được để trống.');
     }
 
-    const trimmedCode = roomCode.trim();
-    if (!/^\d{6}$/.test(trimmedCode)) {
-      throw new Error('Mã phòng phải bao gồm đúng 6 chữ số (0-9).');
+    // BE-14: 6 chữ số (công khai) hoặc 10 ký tự Crockford base32 (riêng tư); chữ thường được chuẩn hoá thành chữ hoa
+    const trimmedCode = roomCode.replace(/[\s-]/g, '').toUpperCase();
+    if (!/^\d{6}$/.test(trimmedCode) && !/^[0-9A-HJKMNP-TV-Z]{10}$/.test(trimmedCode)) {
+      throw new Error('Mã phòng phải gồm 6 chữ số (phòng công khai) hoặc 10 ký tự chữ và số (phòng riêng tư).');
     }
 
     // Tìm phòng trong store
@@ -559,16 +560,18 @@ class RoomApiService {
     if (!urlOrPath || typeof urlOrPath !== 'string') return null;
 
     // 1. Dạng /room/123456 hoặc /room/123456?abc=1
-    const matchPath = urlOrPath.match(/\/room\/(\d{6})(?:[/?#]|$)/i);
-    if (matchPath) return matchPath[1];
+    // BE-14: mã 6 số hoặc 10 ký tự base32 (phòng riêng tư)
+    const matchPath = urlOrPath.match(/\/room\/(\d{6}|[0-9A-HJKMNP-TV-Z]{10})(?:[/?#]|$)/i);
+    if (matchPath) return matchPath[1].toUpperCase();
 
     // 2. Dạng query parameter ?roomCode=123456 hoặc ?room=123456
-    const matchQuery = urlOrPath.match(/[?&](?:roomCode|room|code)=(\d{6})(?:[&?#]|$)/i);
-    if (matchQuery) return matchQuery[1];
+    const matchQuery = urlOrPath.match(/[?&](?:roomCode|room|code)=(\d{6}|[0-9A-HJKMNP-TV-Z]{10})(?:[&?#]|$)/i);
+    if (matchQuery) return matchQuery[1].toUpperCase();
 
     // 3. Nếu truyền trực tiếp mã 6 số
     const cleanCode = urlOrPath.trim();
     if (/^\d{6}$/.test(cleanCode)) return cleanCode;
+    if (/^[0-9A-HJKMNP-TV-Z]{10}$/i.test(cleanCode)) return cleanCode.toUpperCase();
 
     return null;
   }
