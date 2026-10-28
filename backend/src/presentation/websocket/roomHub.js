@@ -1349,10 +1349,79 @@ class RoomHub {
     this.clearDisconnectTimer(room.code);
     this.clearTurnTimer(room.code);
 
+    // REV2-03: bắt đầu ghi kết quả (phần đồng bộ của persistSettlement đã chụp winner/loser),
+    // rồi GỠ GHẾ NGAY (đồng bộ) trước khi await. Trước đây ghế chỉ bị gỡ sau await nên
+    // người quay lại trong lúc chờ DB bị chấp nhận rồi bị đuổi dù socket còn mở.
+    const persisting = this.persistSettlement(room, matchId, winnerColor, endReason, options);
+    const released = this._releaseSeats(room, options.releaseUserIds || []);
     try {
-      return await this.persistSettlement(room, matchId, winnerColor, endReason, options);
+      return await persisting;
     } finally {
       room.settling = false;
+      this._announceSeatRelease(room, released);
+    }
+  }
+
+  /**
+   * REV2-03: gỡ ghế của các user (đồng bộ) và sửa chủ phòng nếu chủ phòng không còn ngồi ghế.
+   * Phòng không còn ai -> đóng phòng.
+   * @param {object} room
+   * @param {Array<number|string>} userIds
+   * @returns {{removed:number[], transfer:object|null}}
+   */
+  _releaseSeats(room, userIds) {
+    const removed = [];
+    for (const id of userIds) {
+      if (id === null || id === undefined) continue;
+      if (room.getParticipantRole(id)) {
+        room.removeParticipant(id);
+        removed.push(Number(id));
+      }
+    }
+    let transfer = null;
+    if (removed.length) {
+      const hostSeated = room.players.red && Number(room.players.red.id) === Number(room.hostId);
+      if (!hostSeated) {
+        transfer = room.transferHost();
+        if (transfer.newHostId) {
+          const newHostSockets = this.userSockets.get(Number(transfer.newHostId));
+          if (newHostSockets) {
+            for (const sock of newHostSockets) {
+              const m = this.clients.get(sock);
+              if (m && m.roomCode === room.code) {
+                m.role = 'PLAYER';
+                m.side = 'RED';
+              }
+            }
+          }
+        } else {
+          // REV2-04: không còn ai trong phòng -> đóng phòng
+          this.roomManager.closeRoom(room.code);
+        }
+      }
+    }
+    return { removed, transfer };
+  }
+
+  /** REV2-03: báo cho những người còn lại (HostTransferred / UserLeft) sau khi gỡ ghế. */
+  _announceSeatRelease(room, { removed, transfer }) {
+    if (transfer && transfer.newHostId) {
+      this.broadcastToRoom(room.code, {
+        type: 'HostTransferred',
+        previousHostId: transfer.oldHostId,
+        newHostId: transfer.newHostId,
+        newHost: transfer.newHost,
+        room: room.getSummary(),
+      });
+    }
+    for (const userId of removed) {
+      // người đã quay lại trong lúc chốt (có vai trò mới) thì không báo là đã rời
+      if (room.getParticipantRole(userId)) continue;
+      this.broadcastToRoom(room.code, {
+        type: 'UserLeft',
+        userId,
+        room: room.getSummary(),
+      });
     }
   }
 
@@ -1619,65 +1688,18 @@ class RoomHub {
 
     // 2. Xử thua do mất kết nối quá 60 giây (COT-595)
     const winningSide = side === 'RED' ? 'BLACK' : 'RED';
-    const winningUser = winningSide === 'BLACK' ? room.players.black : room.players.red;
-    const losingUser = side === 'RED' ? room.players.red : room.players.black;
     const winnerColor = winningSide.toLowerCase();
 
-    // Khóa bàn cờ, không nhận thêm nước đi
-    room.status = 'WAITING_OPPONENT';
-    if (room.matchState) {
-      room.matchState.status = 'completed';
-      room.matchState.winner = winnerColor;
-      room.matchState.endReason = 'DISCONNECT_TIMEOUT';
-      room.matchState.isPaused = false;
-    }
-    room.reconnectState = null;
-    this.clearDisconnectTimer(room.code);
-
-    // BE-04: dùng chung settleMatch (Elo delta + history + matchEnded + clear readyStates)
+    // BE-04: dùng chung settleMatch (Elo delta + history + matchEnded + clear readyStates).
+    // REV2-03: settleMatch gỡ ghế người mất kết nối (và chuyển chủ phòng) ĐỒNG BỘ trước await.
     try {
       await this.settleMatch(room, winnerColor, 'DISCONNECT_TIMEOUT', {
         message: `Kỳ thủ bên ${winningSide === 'RED' ? 'Đỏ' : 'Đen'} thắng do đối thủ mất kết nối quá thời gian quy định (60 giây).`,
+        releaseUserIds: [userId],
       });
     } catch (err) {
       console.error('[settleMatch] disconnect:', err);
     }
-
-    // Chuyển phòng sang trạng thái Đang chờ trận mới, chuyển quyền Chủ phòng nếu người mất mạng là Host
-    room.readyStates.clear();
-    const wasHost = Number(room.hostId) === Number(userId);
-
-    room.removeParticipant(userId);
-
-    if (wasHost) {
-      const transferResult = room.transferHost();
-      if (transferResult.newHostId) {
-        const newHostSockets = this.userSockets.get(transferResult.newHostId);
-        if (newHostSockets) {
-          for (const s of newHostSockets) {
-            const m = this.clients.get(s);
-            if (m && m.roomCode === room.code) {
-              m.role = 'PLAYER';
-              m.side = 'RED';
-            }
-          }
-        }
-
-        this.broadcastToRoom(room.code, {
-          type: 'HostTransferred',
-          previousHostId: transferResult.oldHostId,
-          newHostId: transferResult.newHostId,
-          newHost: transferResult.newHost,
-          room: room.getSummary(),
-        });
-      }
-    }
-
-    this.broadcastToRoom(room.code, {
-      type: 'UserLeft',
-      userId,
-      room: room.getSummary(),
-    });
 
     if (typeof this.onDisconnectTimeout === 'function') {
       this.onDisconnectTimeout(room, userId, side);
