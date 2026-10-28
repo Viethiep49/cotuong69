@@ -18,6 +18,8 @@
 - **Đăng nhập chính = đăng ký/đăng nhập thường** (username + tên hiển thị + email + mật khẩu). **Giữ nguyên** trường email bắt buộc như hiện tại, nhưng **không xác minh email** (không gửi mail kích hoạt). Người chơi đăng ký xong là chơi được ngay. Không đổi schema bảng `users` cho phần này.
 - **OAuth**: chỉ Google, và là tuỳ chọn (xem SEC-05). Bỏ Facebook. Token `mock_` chỉ dùng khi dev/demo (xem SEC-01).
 - **Quên mật khẩu**: `emailService.js` hiện là stub, không gửi mail thật. Giữ như vậy; khi `NODE_ENV !== 'production'` thì `console.log` link reset ra terminal backend để demo được. Không cần tích hợp SMTP.
+- **Khán giả (spectator) không được chat** (quyết định chủ dự án, review lần 3): server từ chối `chat:send` của khán giả bằng mã `SPECTATOR_CANNOT_CHAT`; khán giả vẫn NHẬN tin nhắn.
+- **PvE phải chơi được trên giao diện** (quyết định chủ dự án, review lần 3): xây màn hình bàn cờ PvE (tái sử dụng `XiangqiBoard` của React), gọi API PvE thật (xem PVE-UI ở PHASE 5).
 - Không đưa vào phạm vi: tách refresh token sang cookie httpOnly (FE-11 phần tuỳ chọn), TURN server thật (FE-07 chỉ cần đọc cấu hình từ env).
 
 ### 0.2 Quy tắc bắt buộc
@@ -540,6 +542,34 @@ Không có `process.on('unhandledRejection'|'uncaughtException')`, không có `w
   - Khi trận kết thúc: tự reset ván mới sau 10 giây, hoặc thêm message `{type:'rematch'}` để 2 người chơi bấm "Chơi lại".
   - Thêm `DEMO_CLOCK_SECONDS` (mặc định 600) vào `.env.example` để demo không bị gấp.
 - **Test**: tạo trận và chờ quá thời gian đồng hồ khi chưa đủ 2 người → chưa ai thua.
+
+---
+
+## PHASE 5 — Review lần 3 (REV2-xx và PVE-UI)
+
+Các lỗi do review độc lập lần 3 phát hiện. Mỗi mục = một commit `fix(REV2-xx): ...`, có test tái hiện (fail trước, pass sau).
+
+**Backend**
+- [ ] REV2-01 · [HIGH] Client reset TCP trong lúc WS upgrade làm sập server (socket upgrade chưa có listener `error` khi `await ensureSessionActive`). Gắn `socket.on('error')` trước await đầu tiên, sau await thoát nếu `socket.destroyed`; kiểm tra cả đường upgrade demo trong `server.js`.
+- [ ] REV2-02 · [MEDIUM] Cả hai bên cùng rớt: khi cửa sổ reconnect của bên đầu hết mà bên kia còn trong cửa sổ của mình thì phải chờ (bên kia quay lại -> thắng DISCONNECT_TIMEOUT; hết cửa sổ -> SYSTEM_ERROR), không được SYSTEM_ERROR ngay.
+- [ ] REV2-03 · [MEDIUM] `handleDisconnectTimeout` chỉ gỡ ghế sau `await settleMatch` nên người quay lại trong lúc await bị đuổi dù socket còn. Gỡ ghế (và chuyển chủ phòng) đồng bộ trước khi await, hoặc kiểm tra lại socket sống sau await.
+- [ ] REV2-04 · [MEDIUM] Sau SYSTEM_ERROR cả hai ghế bị giải phóng nhưng `hostId` còn trỏ người đã gỡ và không có UserLeft: phòng có khán giả bị kẹt. Chuyển chủ phòng/đóng phòng và broadcast.
+- [ ] REV2-05 · [LOW-MED] Xin thua (hay mọi settle) khi đối thủ đang rớt mạng để lại ghế ma: `settleMatch` phải giải phóng ghế các bên còn trong `reconnectState.bySide` (+ chuyển chủ phòng).
+- [ ] REV2-06 · [LOW] Dòng hoà / SYSTEM_ERROR trong `pvp_matches` không lưu id người chơi: luôn lưu red/black user id.
+- [ ] REV2-07 · [LOW] Nước đi được nhận sau hạn đồng hồ: trước `applyMove` từ chối khi hết giờ lượt/đồng hồ tổng của người đi và chốt TIMEOUT.
+- [ ] REV2-08 · Khán giả không được chat (roomHub `chat:send` và `demoChatRelay.js` trả `SPECTATOR_CANNOT_CHAT`); gỡ `TODO(FE-05)`.
+- [ ] REV2-09 · Chất lượng test: test REV-01 đi qua hub thật (connection handler / startDisconnectTimer); thêm test cấp hub `start` khi đang chốt trả `MATCH_SETTLING`.
+
+**Frontend**
+- [ ] REV2-10 · [MEDIUM] Sau demo auto-reset (REV-19) `useMatch` giữ `serverResult` của ván cũ -> hai bàn bị khoá. Xoá kết quả khi status rời `completed`, chỉ xử lý kết quả khi chuyển vào `completed`.
+- [ ] REV2-11 · [MEDIUM] `reconnectPolicy.js` coi mọi mã 4000-4999 là fatal nhưng hub dùng 4008 cho heartbeat timeout. Chỉ các mã auth thật sự (1008, 4001, 4003...) là fatal; mã khác retry với backoff.
+- [ ] REV2-12 · [LOW] Handler close/error/message của `useMatch` không kiểm tra socket hiện hành; `online` khi socket cũ đang CLOSING mở socket thứ 3 và socket thứ 2 giữ ghế. Bỏ qua sự kiện của socket không phải hiện hành; CLOSING xử lý như CONNECTING.
+- [ ] REV2-13 · [LOW] Trong App thật `call:leave` không được gửi khi unmount vì socket đóng trước dispose của call controller. Sửa thứ tự cleanup, test ở mức App/composition.
+- [ ] REV2-14 · [LOW] Chat phòng ở lobby JS cũ (`js/rooms.js`, `js/chat.js`) vẫn giả "Đã gửi" bằng timer khi không có transport: nối transport thật hoặc hiển thị rõ chỉ-cục-bộ.
+- [ ] REV2-15 · [LOW] Thêm test hành vi cho `useRoomSignaling` với WebSocket giả, và test render jsdom cho XSS của `renderRooms`/chat với dữ liệu độc hại.
+
+**Tính năng**
+- [ ] PVE-UI · Màn hình chơi PvE trên giao diện (tái dùng `XiangqiBoard`): đi quân, nước máy đáp, đồng hồ, xin thua có xác nhận, modal kết quả (WIN/LOSS/DRAW + lý do tiếng Việt), kết quả không xác định hiển thị trung tính, tải lại tiếp tục trận, phản ánh timeout của server. Test Vitest + RTL với fetch giả.
 
 ---
 
