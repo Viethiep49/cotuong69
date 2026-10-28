@@ -358,6 +358,29 @@ class RoomHub {
   }
 
   async handleUpgrade(request, socket, head) {
+    // REV2-01: socket upgrade thô chưa có listener 'error'. Từ REV-05 hàm này `await`
+    // kiểm tra phiên trong DB; nếu client reset TCP (ECONNRESET) trong lúc chờ thì
+    // 'error' không có listener -> uncaughtException -> sập process. Gắn listener
+    // TRƯỚC await đầu tiên (ws tự gắn lại listener của nó khi nhận socket).
+    const onSocketError = () => {
+      try {
+        socket.destroy();
+      } catch {
+        /* ignore */
+      }
+    };
+    if (socket && typeof socket.on === 'function') socket.on('error', onSocketError);
+    try {
+      await this._handleUpgradeInner(request, socket, head);
+    } finally {
+      // Đã giao cho ws (hoặc đã huỷ): bỏ listener tạm để không rò rỉ
+      if (socket && typeof socket.removeListener === 'function') {
+        socket.removeListener('error', onSocketError);
+      }
+    }
+  }
+
+  async _handleUpgradeInner(request, socket, head) {
     let urlObj;
     try {
       urlObj = new URL(request.url, 'http://localhost');
@@ -413,6 +436,8 @@ class RoomHub {
         socket.destroy();
         return;
       }
+      // REV2-01: client đã ngắt trong lúc chờ DB -> không giao socket chết cho ws
+      if (socket.destroyed) return;
     }
 
     if (!roomCode) {
@@ -430,6 +455,7 @@ class RoomHub {
       return;
     }
 
+    if (socket.destroyed) return;
     this.wss.handleUpgrade(request, socket, head, (ws) => {
       this.wss.emit('connection', ws, request, decodedUser, room);
     });

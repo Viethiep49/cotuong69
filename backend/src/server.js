@@ -292,6 +292,17 @@ function createServer(options = {}) {
   }
 
   server.on('upgrade', (request, socket, head) => {
+    // REV2-01: socket upgrade thô không có listener 'error' mặc định; client reset TCP
+    // (ECONNRESET) sẽ thành uncaughtException. ws gắn listener của nó khi nhận socket.
+    const onUpgradeSocketError = () => {
+      try {
+        socket.destroy();
+      } catch {
+        /* ignore */
+      }
+    };
+    socket.on('error', onUpgradeSocketError);
+
     let pathname;
     try {
       pathname = new URL(request.url, 'http://localhost').pathname;
@@ -324,7 +335,7 @@ function createServer(options = {}) {
         } catch {
           /* ignore */
         }
-      });
+      }).finally(() => socket.removeListener('error', onUpgradeSocketError));
       return;
     }
 
@@ -349,6 +360,7 @@ function createServer(options = {}) {
     webSockets.handleUpgrade(request, socket, head, (client) => {
       webSockets.emit('connection', client);
     });
+    socket.removeListener('error', onUpgradeSocketError);
   });
 
   webSockets.on('connection', (client) => {
