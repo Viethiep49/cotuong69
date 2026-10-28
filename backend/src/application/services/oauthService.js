@@ -99,7 +99,10 @@ class OAuthVerifierService {
           }
         });
       }).on('error', (e) => {
-        const err = new Error(`Không thể kết nối đến máy chủ Google: ${e.message}`);
+        // REV2-24: chi tiết lỗi mạng (vd. getaddrinfo ENOTFOUND <host>) chỉ ghi log phía server,
+        // không đưa ra client; thông điệp trả về là cố định.
+        console.error('[OAuth] không kết nối được Google:', e && e.message);
+        const err = new Error('Không thể kết nối đến máy chủ Google. Vui lòng thử lại sau.');
         err.code = 'NETWORK_ERROR';
         err.statusCode = 502;
         reject(err);
