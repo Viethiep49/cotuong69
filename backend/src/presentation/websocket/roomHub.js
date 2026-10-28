@@ -1342,11 +1342,16 @@ class RoomHub {
     const color = room.matchState.currentTurn;
     if (color !== 'red' && color !== 'black') return;
 
-    const remainingSeconds = typeof room.getRemainingTurnSeconds === 'function'
-      ? room.getRemainingTurnSeconds()
-      : room.matchState.turnRemainingSeconds;
-
-    const timeoutMs = Math.max(0, Math.round(Number(remainingSeconds) * 1000)) + 50;
+    // REV-11: hẹn giờ theo min(thời gian còn của lượt, đồng hồ tổng còn của bên đang đi).
+    // Trước đây chỉ theo lượt 60s nên đồng hồ tổng (300s) không bao giờ được thực thi.
+    const turnMs = typeof room.getTurnRemainingMs === 'function'
+      ? room.getTurnRemainingMs()
+      : Math.max(0, Number(room.matchState.turnRemainingSeconds) * 1000);
+    const clockMs = typeof room.getClockRemainingMs === 'function'
+      ? room.getClockRemainingMs(color)
+      : Infinity;
+    const clockExpiresFirst = clockMs < turnMs;
+    const timeoutMs = Math.round(Math.min(turnMs, clockMs)) + 50;
     const opponentColor = color === 'red' ? 'black' : 'red';
     const matchId = room.matchId;
 
@@ -1359,8 +1364,11 @@ class RoomHub {
       const clocks = room.matchState.remainingClocks;
       if (clocks) clocks[color] = 0;
 
+      const sideName = color === 'red' ? 'Đỏ' : 'Đen';
       this.settleMatch(room, opponentColor, 'TIMEOUT', {
-        message: `Kỳ thủ bên ${color === 'red' ? 'Đỏ' : 'Đen'} hết thời gian suy nghĩ.`,
+        message: clockExpiresFirst
+          ? `Kỳ thủ bên ${sideName} hết đồng hồ tổng của ván cờ.`
+          : `Kỳ thủ bên ${sideName} hết thời gian suy nghĩ.`,
       }).catch((err) => console.error('[settleMatch] timeout:', err));
     }, timeoutMs);
 

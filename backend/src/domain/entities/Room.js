@@ -251,8 +251,35 @@ class Room {
   getRemainingTurnSeconds() {
     if (!this.matchState) return 0;
     if (this.matchState.isPaused) return this.matchState.turnRemainingSeconds;
+    // REV-11: sau một lần tạm dừng, phần còn lại của lượt được lưu chính xác ở turnRemainingMs
+    if (this.matchState.turnRemainingMs != null) return Math.ceil(this.getTurnRemainingMs() / 1000);
     const elapsed = Math.max(0, Math.floor((Date.now() - this.matchState.turnStartedAt) / 1000));
     return Math.max(0, this.matchState.turnRemainingSeconds - elapsed);
+  }
+
+  /**
+   * REV-11: thời gian còn lại của LƯỢT hiện tại, tính bằng mili-giây (chính xác, không làm tròn).
+   */
+  getTurnRemainingMs() {
+    if (!this.matchState) return 0;
+    const baseMs = this.matchState.turnRemainingMs != null
+      ? Number(this.matchState.turnRemainingMs)
+      : Number(this.matchState.turnRemainingSeconds) * 1000;
+    if (this.matchState.isPaused) return Math.max(0, baseMs);
+    return Math.max(0, baseMs - (Date.now() - this.matchState.turnStartedAt));
+  }
+
+  /**
+   * REV-11: đồng hồ TỔNG còn lại (mili-giây) của bên đang tới lượt, đã trừ phần thời gian
+   * đã trôi từ turnStartedAt (remainingClocks chỉ được trừ tại nước đi / lúc tạm dừng).
+   * @returns {number} Infinity nếu không có dữ liệu đồng hồ
+   */
+  getClockRemainingMs(color = this.matchState && this.matchState.currentTurn) {
+    if (!this.matchState || !this.matchState.remainingClocks) return Infinity;
+    const clock = Number(this.matchState.remainingClocks[color]);
+    if (!Number.isFinite(clock)) return Infinity;
+    const running = this.matchState.isPaused ? 0 : Date.now() - this.matchState.turnStartedAt;
+    return Math.max(0, clock * 1000 - running);
   }
 
   pauseMatchForDisconnect(userId, countdownSeconds = 60) {
@@ -261,8 +288,22 @@ class Room {
     const roleInfo = this.getParticipantRole(uid);
     if (!roleInfo || roleInfo.role !== 'PLAYER') return null;
 
+    // REV-11: lần tạm dừng đầu tiên -> trừ NGAY thời gian bên đang tới lượt đã dùng vào đồng
+    // hồ tổng và lưu phần còn lại của lượt (chính xác tới mili-giây). Khi resume chỉ đặt lại
+    // turnStartedAt, KHÔNG reset lượt về đầy 60s. Nếu đã tạm dừng sẵn (người thứ hai rớt
+    // mạng) thì không trừ lần nữa.
+    if (!this.matchState.isPaused) {
+      const elapsedMs = Math.max(0, Date.now() - this.matchState.turnStartedAt);
+      const turnColor = this.matchState.currentTurn;
+      const clocks = this.matchState.remainingClocks;
+      if (clocks && Number.isFinite(Number(clocks[turnColor]))) {
+        clocks[turnColor] = Math.max(0, Number(clocks[turnColor]) - elapsedMs / 1000);
+      }
+      const remainingMs = Math.max(0, this.getTurnRemainingMs());
+      this.matchState.turnRemainingMs = remainingMs;
+      this.matchState.turnRemainingSeconds = Math.ceil(remainingMs / 1000);
+    }
     const remaining = this.getRemainingTurnSeconds();
-    this.matchState.turnRemainingSeconds = remaining;
     this.matchState.isPaused = true;
 
     // BE-06: lưu trạng thái mất kết nối THEO TỪNG BÊN (trước đây chỉ 1 state nên
@@ -477,6 +518,7 @@ class Room {
     this.matchState.currentTurn = nextTurn;
     this.matchState.turnStartedAt = Date.now();
     this.matchState.turnRemainingSeconds = this.matchState.turnDurationSeconds || 60;
+    this.matchState.turnRemainingMs = null; // REV-11: lượt mới đầy đủ
     this.matchState.lastMove = { from, to, color, captured: Boolean(capturedPiece) };
 
     const inCheck = isInCheck(this.matchState.board, nextTurn);
