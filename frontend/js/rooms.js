@@ -2612,6 +2612,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ${msg.status === 'SENDING' ? '<span class="status-sending">⏳ Đang gửi</span>' : ''}
             ${msg.status === 'SENT' ? '<span class="status-sent">✓ Đã gửi</span>' : ''}
             ${msg.status === 'FAILED' ? '<span class="status-failed">⚠️ Thất bại</span>' : ''}
+            ${msg.status === 'LOCAL' ? '<span class="status-local" title="Lobby chưa có kênh chat thời gian thực: tin chưa tới đối thủ. Hãy chat trong màn hình ván đấu.">💾 Chỉ lưu trên máy này</span>' : ''}
           </div>
         ` : '';
 

@@ -13,7 +13,9 @@ const CHAT_ROLES = {
 const MESSAGE_STATUS = {
   SENDING: 'SENDING',
   SENT: 'SENT',
-  FAILED: 'FAILED'
+  FAILED: 'FAILED',
+  // REV2-14: không có transport thì tin chỉ nằm trên máy này — KHÔNG được báo "đã gửi"
+  LOCAL: 'LOCAL'
 };
 
 const MAX_MESSAGE_LENGTH = 255;
@@ -38,8 +40,9 @@ class ChatService {
     // làm đổi đối tượng của người gọi khi setRole.
     this.currentUser = ChatService.normalizeUser(options.currentUser);
     // FE-05: transport tuỳ chọn { send(message) -> Promise }. Có transport thì "SENT" chỉ đặt khi
-    // transport resolve (ack thật), reject -> FAILED. Không có (lobby cũ chưa có kênh realtime) thì
-    // giữ hành vi cục bộ cũ để không vỡ giao diện; chat thật nằm ở màn hình trận React.
+    // transport resolve (ack thật), reject -> FAILED. Không có transport (lobby cũ chưa có kênh
+    // realtime) thì tin chỉ hiển thị cục bộ với trạng thái LOCAL (REV2-14: không còn giả lập
+    // "Đã gửi" bằng timer); chat thật nằm ở màn hình trận React.
     this.transport = options.transport && typeof options.transport.send === 'function' ? options.transport : null;
     this.messages = [];
     this.listeners = [];
@@ -171,14 +174,11 @@ class ChatService {
       return newMessage;
     }
 
-    // Không có transport: giữ giả lập cục bộ cũ (xem chú thích ở constructor)
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        newMessage.status = MESSAGE_STATUS.SENT;
-        this._notifyListeners({ type: 'MESSAGE_STATUS_UPDATED', message: newMessage });
-        resolve(newMessage);
-      }, 50);
-    });
+    // REV2-14: không có transport -> không ai nhận được tin này. Đánh dấu LOCAL (chỉ trên máy
+    // này) ngay lập tức thay vì giả vờ "Đã gửi" sau một timer.
+    newMessage.status = MESSAGE_STATUS.LOCAL;
+    this._notifyListeners({ type: 'MESSAGE_STATUS_UPDATED', message: newMessage });
+    return newMessage;
   }
 
   /**

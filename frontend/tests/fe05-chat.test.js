@@ -181,6 +181,26 @@ describe('FE-05: JS cũ (chat.js / rooms.js)', () => {
     assert.strictEqual(failed.status, MESSAGE_STATUS.FAILED);
   });
 
+  test('REV2-14: không có transport -> LOCAL (không giả "Đã gửi"), không dùng timer; UI hiển thị chỉ-cục-bộ', async () => {
+    const realSetTimeout = global.setTimeout;
+    let timers = 0;
+    global.setTimeout = (...args) => { timers += 1; return realSetTimeout(...args); };
+    try {
+      const chat = new ChatService({ currentUser: { id: 1, name: 'A', role: 'HOST' } });
+      const statuses = [];
+      chat.onChatEvent((evt) => { if (evt.message) statuses.push(evt.message.status); });
+      const sent = await chat.sendMessage('xin chào');
+      assert.strictEqual(sent.status, MESSAGE_STATUS.LOCAL);
+      assert.notStrictEqual(sent.status, MESSAGE_STATUS.SENT);
+      assert.deepStrictEqual(statuses, [MESSAGE_STATUS.SENDING, MESSAGE_STATUS.LOCAL]);
+      assert.strictEqual(timers, 0, 'không được giả lập ack bằng timer');
+    } finally {
+      global.setTimeout = realSetTimeout;
+    }
+    const rooms = read('js/rooms.js');
+    assert.ok(rooms.includes("msg.status === 'LOCAL'") && rooms.includes('Chỉ lưu trên máy này'));
+  });
+
   test('rooms.js huỷ onChatEvent cũ trước khi đăng ký lại', () => {
     const rooms = read('js/rooms.js');
     assert.ok(rooms.includes('let unsubscribeChatEvents = null'));

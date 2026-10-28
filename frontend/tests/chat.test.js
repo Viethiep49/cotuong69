@@ -24,7 +24,9 @@ describe('Nghiệm thu Task COT-630: Giao diện Khung chat text, hiển thị t
         name: 'Nguyễn Tấn Sang',
         avatar: '桑',
         role: CHAT_ROLES.HOST
-      }
+      },
+      // REV2-14: "SENT" chỉ có khi transport xác nhận (ack thật)
+      transport: { send: async () => {} }
     });
 
     let autoScrollTriggered = false;
@@ -53,7 +55,8 @@ describe('Nghiệm thu Task COT-630: Giao diện Khung chat text, hiển thị t
   test('AC 1.2: Trạng thái ban đầu là SENDING trước khi chuyển sang SENT', async () => {
     const chat = new ChatService({
       roomId: '102938',
-      currentUser: { id: 'usr_sang', name: 'Nguyễn Tấn Sang', avatar: '桑', role: CHAT_ROLES.HOST }
+      currentUser: { id: 'usr_sang', name: 'Nguyễn Tấn Sang', avatar: '桑', role: CHAT_ROLES.HOST },
+      transport: { send: async () => {} }
     });
 
     const statusHistory = [];
