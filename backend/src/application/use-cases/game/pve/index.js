@@ -17,7 +17,7 @@ const { makeListPlayerPveHistory, makeGetPveMatchReplay } = require('./pveHistor
  */
 function createPveUseCases({ pveMatchRepository, clock = () => new Date(), random = Math.random }) {
   const finishPveMatch = makeFinishPveMatch({ pveMatchRepository, clock });
-  const applyAndPersistMove = makeApplyAndPersistMove({ pveMatchRepository, clock, finishPveMatch });
+  const applyAndPersistMove = makeApplyAndPersistMove({ pveMatchRepository, clock });
   return {
     applyAndPersistMove,
     finishPveMatch,

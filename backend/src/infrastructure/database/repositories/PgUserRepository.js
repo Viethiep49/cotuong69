@@ -1,9 +1,8 @@
 const defaultDb = require('../../../config/db');
+const { parseDbTimestamp } = require('../../../core/dbTimestamp');
 
-function toDate(val) {
-  if (!val) return null;
-  return val instanceof Date ? val : new Date(val);
-}
+// REV2-20: chuỗi thời gian SQLite không có múi giờ là UTC (xem core/dbTimestamp.js)
+const toDate = parseDbTimestamp;
 
 function toUser(row) {
   if (!row) return null;
@@ -18,6 +17,7 @@ function toUser(row) {
     status: row.status || 'ACTIVE',
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
+    passwordChangedAt: toDate(row.password_changed_at),
   };
 }
 
@@ -29,8 +29,8 @@ class PgUserRepository {
   async findByUsername(username) {
     if (!username) return null;
     const res = await this.db.query(
-      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at
-       FROM users WHERE username = $1 LIMIT 1`,
+      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at, password_changed_at
+       FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1`,
       [username.trim()]
     );
     return res.rows.length > 0 ? toUser(res.rows[0]) : null;
@@ -39,7 +39,7 @@ class PgUserRepository {
   async findByEmail(email) {
     if (!email) return null;
     const res = await this.db.query(
-      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at
+      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at, password_changed_at
        FROM users WHERE email = $1 LIMIT 1`,
       [email.trim().toLowerCase()]
     );
@@ -49,7 +49,7 @@ class PgUserRepository {
   async findById(id) {
     if (!id) return null;
     const res = await this.db.query(
-      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at
+      `SELECT id, username, display_name, email, password_hash, elo_rating, avatar_url, status, created_at, updated_at, password_changed_at
        FROM users WHERE id = $1 LIMIT 1`,
       [Number(id)]
     );
@@ -67,7 +67,7 @@ class PgUserRepository {
 
   async updatePassword(userId, passwordHash) {
     await this.db.query(
-      `UPDATE users SET password_hash = $1 WHERE id = $2`,
+      `UPDATE users SET password_hash = $1, password_changed_at = CURRENT_TIMESTAMP WHERE id = $2`,
       [passwordHash, Number(userId)]
     );
     return await this.findById(userId);
@@ -99,6 +99,49 @@ class PgUserRepository {
       [Number(eloRating), Number(userId)]
     );
     return await this.findById(userId);
+  }
+
+  /**
+   * BE-03: cộng/trừ Elo theo DELTA (không ghi đè giá trị tuyệt đối) cho 2 người
+   * trong CÙNG một transaction — tránh ghi sai khi trạng thái trong RAM đã cũ.
+   * @param {{userId:number, delta:number}} first
+   * @param {{userId:number, delta:number}} second
+   */
+  async addEloPair(first, second) {
+    const apply = async (query, { userId, delta }) => {
+      const numericDelta = Number.isFinite(Number(delta)) ? Math.round(Number(delta)) : 0;
+      await query(
+        `UPDATE users
+         SET elo_rating = CASE WHEN elo_rating + $1 < 0 THEN 0 ELSE elo_rating + $1 END
+         WHERE id = $2`,
+        [numericDelta, Number(userId)]
+      );
+    };
+
+    const client = typeof this.db.getClient === 'function' ? await this.db.getClient() : null;
+    if (!client) {
+      const query = (text, params) => this.db.query(text, params);
+      await apply(query, first);
+      await apply(query, second);
+      return;
+    }
+
+    try {
+      await client.query('BEGIN');
+      const query = (text, params) => client.query(text, params);
+      await apply(query, first);
+      await apply(query, second);
+      await client.query('COMMIT');
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }
 

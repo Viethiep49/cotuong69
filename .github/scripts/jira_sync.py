@@ -20,8 +20,22 @@ def main():
     commit_messages = os.environ.get("COMMIT_MESSAGES", "")
     input_issue = os.environ.get("INPUT_ISSUE_KEY", "")
     input_transition = os.environ.get("INPUT_TRANSITION_ID", "")
+    repository = os.environ.get("REPOSITORY") or os.environ.get("GITHUB_REPOSITORY", "")
+    pr_head_repo = os.environ.get("PR_HEAD_REPO", "")
+    project_key = (os.environ.get("JIRA_PROJECT_KEY") or "COT").strip().upper() or "COT"
 
     clean_ref = ref_name.replace("refs/heads/", "").strip()
+
+    # SEC-04: chỉ xử lý PR được mở từ chính repository này. PR từ fork có thể
+    # đặt tiêu đề bất kỳ nên không được phép chuyển trạng thái issue Jira.
+    if event_name == "pull_request_target":
+        if not pr_head_repo:
+            print("Không xác định được repo nguồn của PR — bỏ qua (fail-safe).")
+            return
+        if repository and pr_head_repo != repository:
+            print(f"PR đến từ fork ({pr_head_repo} != {repository}) — bỏ qua, không chuyển trạng thái Jira.")
+            return
+
     print(f"Triggered by event: {event_name}")
     print(f"Ref name: {ref_name} (clean: {clean_ref}, type: {ref_type})")
     print(f"PR title: {pr_title}")
@@ -80,11 +94,22 @@ def main():
         print(f"Unhandled event: {event_name}. Exiting.")
         return
 
-    # Regex trích xuất tất cả Jira Issue Keys, bỏ qua tiền tố tự sinh 'revert-\d+' của GitHub
-    matches = re.findall(r'\b([A-Za-z][A-Za-z0-9_]*-\d+)\b', text_to_search)
-    valid_matches = [m.upper() for m in matches if not m.upper().startswith("REVERT-")]
+    # SEC-04: chỉ nhận Issue Key đúng project key (mặc định COT-xxx).
+    # Regex cũ nhận mọi tiền tố nên PR có thể trỏ sang issue của project khác.
+    allowed_transitions = {"11", "21", "31", "61", "71"}
+    if transition_id is not None and str(transition_id) not in allowed_transitions:
+        print(f"::error::Transition ID '{transition_id}' không hợp lệ (chỉ chấp nhận {sorted(allowed_transitions)}).")
+        sys.exit(1)
+
+    if event_name == "workflow_dispatch" and input_issue:
+        if not re.fullmatch(rf"{re.escape(project_key)}-\d+", input_issue.strip(), re.IGNORECASE):
+            print(f"::error::Issue Key '{input_issue}' không hợp lệ (phải có dạng {project_key}-<số>).")
+            sys.exit(1)
+
+    key_pattern = re.compile(rf"\b{re.escape(project_key)}-\d+\b", re.IGNORECASE)
+    valid_matches = [m.upper() for m in key_pattern.findall(text_to_search)]
     if not valid_matches:
-        print(f"Không tìm thấy Jira Issue Key hợp lệ trong: '{text_to_search}'. Exiting.")
+        print(f"Không tìm thấy Jira Issue Key '{project_key}-<số>' trong: '{text_to_search}'. Exiting.")
         return
 
     unique_keys = list(dict.fromkeys(valid_matches))
@@ -121,7 +146,8 @@ def main():
                 data = json.loads(resp.read().decode("utf-8"))
                 available = data.get("transitions", [])
                 valid_ids = [t["id"] for t in available]
-                print(f"Available transitions for {issue_key}: {[f"{t['name']} ({t['id']})" for t in available]}")
+                formatted = [f"{t['name']} ({t['id']})" for t in available]
+                print(f"Available transitions for {issue_key}: {formatted}")
                 if target_id_str not in valid_ids:
                     wanted = status_name_map.get(target_id_str, "")
                     matched = next((t["id"] for t in available if wanted in t.get("name", "").lower() or wanted in t.get("to", {}).get("name", "").lower()), None)

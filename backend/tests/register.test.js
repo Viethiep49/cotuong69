@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-571:
  * Đăng ký tài khoản và mã hóa mật khẩu (Bcrypt)
@@ -14,7 +15,7 @@ process.env.DB_CLIENT = 'sqlite';
 const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
 const { hashPassword, comparePassword } = require('../src/application/services/passwordService');
 const { validateRegisterInput } = require('../src/domain/validators/authValidator');
 const { createServer } = require('../src/server');

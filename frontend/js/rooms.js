@@ -3,6 +3,29 @@
  * Điều khiển hiển thị danh sách phòng, validation form tìm kiếm 6 số, và điều hướng.
  */
 
+// BE-14: định dạng mã phòng — PHẢI trùng src/domain/roomCode.js (test room-code kiểm tra hai bản giống nhau).
+//  - Công khai: 6 chữ số
+//  - Riêng tư : 10 ký tự Crockford base32 (0-9, A-Z trừ I, L, O, U)
+const PUBLIC_ROOM_CODE = /^\d{6}$/;
+const PRIVATE_ROOM_CODE = /^[0-9A-HJKMNP-TV-Z]{10}$/;
+
+/** Bỏ khoảng trắng/gạch ngang, chuyển chữ hoa. */
+function normalizeRoomCode(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/[\s-]/g, '').toUpperCase();
+}
+
+function isValidRoomCode(raw) {
+  const code = normalizeRoomCode(raw);
+  return PUBLIC_ROOM_CODE.test(code) || PRIVATE_ROOM_CODE.test(code);
+}
+
+/** Khi đang gõ: chỉ giữ chữ/số, tự viết hoa, tối đa 10 ký tự. */
+function sanitizeRoomCodeInput(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/[^0-9a-zA-Z]/g, '').toUpperCase().slice(0, 10);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const apiService = new window.RoomApiService();
 
@@ -169,7 +192,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // COT-580: OAuth Buttons & Errors
   const googleLoginBtn = document.getElementById('googleLoginBtn');
-  const facebookLoginBtn = document.getElementById('facebookLoginBtn');
   const oauthGeneralError = document.getElementById('oauthGeneralError');
   const loginGeneralError = document.getElementById('loginGeneralError');
 
@@ -238,6 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const floatingChatRoomTitle = document.getElementById('floatingChatRoomTitle');
 
   let activeChatService = null;
+  let unsubscribeChatEvents = null; // FE-05: hàm huỷ đăng ký onChatEvent hiện tại
 
   /**
    * Khởi tạo ứng dụng
@@ -249,8 +272,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const sessionRes = await authService.restoreSession();
         if (sessionRes && sessionRes.isAuthenticated && sessionRes.user) {
           apiService.setCurrentUser(sessionRes.user);
+        } else {
+          // FE-03: không có phiên hợp lệ -> coi là khách
+          apiService.setCurrentUser(null);
         }
-      } catch {}
+      } catch {
+        apiService.setCurrentUser(null);
+      }
     }
     updateUserAuthUi();
     await loadRooms();
@@ -268,8 +296,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Validate realtime khi người dùng nhập mã phòng
     roomCodeInput.addEventListener('input', (e) => {
-      // Chỉ cho phép nhập ký tự số
-      e.target.value = e.target.value.replace(/\D/g, '');
+      // BE-14: phòng công khai 6 số, phòng riêng tư 10 ký tự base32 -> giữ chữ/số, tự viết hoa, tối đa 10
+      e.target.value = sanitizeRoomCodeInput(e.target.value);
       clearInputError();
     });
 
@@ -493,12 +521,15 @@ document.addEventListener('DOMContentLoaded', () => {
       registerConfirmPasswordInput.addEventListener('input', updateRegisterChecklist);
     }
 
-    // COT-580: Sự kiện nút Đăng nhập nhanh Google & Facebook (OAuth2)
+    // COT-580 / SEC-05: Sự kiện nút Đăng nhập nhanh Google (Facebook đã bỏ)
     if (googleLoginBtn) {
+      // SEC-05: chỉ hiện nút Google khi đã cấu hình client id
+      if (getGoogleClientId()) {
+        googleLoginBtn.style.display = 'inline-flex';
+      } else {
+        googleLoginBtn.style.display = 'none';
+      }
       googleLoginBtn.addEventListener('click', () => handleOAuthLogin('google'));
-    }
-    if (facebookLoginBtn) {
-      facebookLoginBtn.addEventListener('click', () => handleOAuthLogin('facebook'));
     }
 
     // COT-585: Sự kiện Hồ sơ cá nhân & Đổi Avatar
@@ -641,6 +672,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const pveStartSpinner = document.getElementById('pveStartSpinner');
     const pveStartBtnText = document.getElementById('pveStartBtnText');
 
+    // FE-10: instance PveApiService DUY NHẤT của trang (tạo trận, đi quân, xin thua đều dùng chung)
+    let pveSharedApi = null;
+    function getPveApi() {
+      if (!pveSharedApi && typeof window.PveApiService === 'function') {
+        pveSharedApi = new window.PveApiService();
+      }
+      return pveSharedApi;
+    }
+
+    // PVE-UI: điều hướng tới màn hình chơi với máy do React render (xem src/Root.jsx)
+    function openPveMatchScreen(matchId) {
+      const url = new URL(window.location.href);
+      url.search = '';
+      url.hash = '';
+      url.searchParams.set('pveMatchId', String(matchId));
+      window.location.assign(url.toString());
+    }
+    window.openPveMatchScreen = openPveMatchScreen;
+
     function openPveModal() {
       if (!pveStartModal) return;
       if (pveStartError) {
@@ -696,12 +746,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pveStartError) pveStartError.style.display = 'none';
 
         try {
-          const pveApi = (typeof window.PveApiService === 'function')
-            ? new window.PveApiService()
-            : null;
-
+          // FE-10: MỘT instance dùng chung cho tạo trận / xin thua (không tạo instance tạm)
+          const pveApi = getPveApi();
           if (!pveApi) {
             throw new Error('Hệ thống máy chủ PvE chưa sẵn sàng.');
+          }
+          if (apiService.getCurrentUser && !apiService.getCurrentUser()) {
+            throw new Error('Bạn cần đăng nhập để chơi với máy.');
           }
 
           const response = await pveApi.createPveMatch({ playerColor: selectedColor });
@@ -712,6 +763,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const event = new CustomEvent('cotuong:pve-started', { detail: response.match });
             window.dispatchEvent(event);
+
+            // PVE-UI: chuyển sang màn hình bàn cờ React (/?pveMatchId=<id>) để chơi thật;
+            // tải lại trang vẫn tiếp tục đúng ván vì trạng thái nằm ở máy chủ.
+            openPveMatchScreen(response.match.id);
           }
         } catch (err) {
           if (pveStartError) {
@@ -751,7 +806,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const pveResultNewGameBtn = document.getElementById('pveResultNewGameBtn');
 
     let currentPveMatch = null;
-    let pveSharedApi = (typeof window.PveApiService === 'function') ? new window.PveApiService() : null;
 
     function openPveResignModal() {
       if (!pveResignConfirmModal) return;
@@ -803,6 +857,7 @@ document.addEventListener('DOMContentLoaded', () => {
         STALEMATE: 'Hết nước đi',
         TIMEOUT: 'Hết thời gian',
         RESIGN: 'Đầu hàng',
+        DRAW_PLY_LIMIT: 'Hết giới hạn số nước đi',
       };
       if (pveResultReason) {
         pveResultReason.textContent = reasonLabels[match.endReason] || 'Kết thúc ván đấu';
@@ -847,31 +902,31 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pveResignError) pveResignError.style.display = 'none';
 
         try {
-          if (!pveSharedApi) pveSharedApi = new window.PveApiService();
-          const matchId = currentPveMatch ? currentPveMatch.id : 'pve-current';
+          const pveApi = getPveApi();
+          if (!pveApi || !currentPveMatch) {
+            throw new Error('Không có ván đấu nào đang diễn ra để xin thua.');
+          }
           let response;
           try {
-            response = await pveSharedApi.resignMatch(matchId);
-          } catch {
-            // Nếu chưa có match trong map bộ nhớ, tạo kết quả resign mặc định
-            response = {
-              success: true,
-              match: {
-                id: matchId,
-                status: 'FINISHED',
-                result: 'LOSS',
-                endReason: 'RESIGN',
-                playerColor: currentPveMatch?.playerColor || 'red',
-                hasEloRating: false
-              }
-            };
+            response = await pveApi.resignMatch(currentPveMatch.id);
+          } catch (resignError) {
+            // FE-10: KHÔNG tự bịa kết quả. Chỉ riêng trường hợp máy chủ báo ván đã kết thúc
+            // (vd. hết giờ trước khi bấm) thì lấy kết quả THẬT từ máy chủ; lỗi khác hiện nguyên lỗi.
+            if (resignError && resignError.code === 'MATCH_FINISHED') {
+              response = await pveApi.getMatch(currentPveMatch.id);
+            } else {
+              throw resignError;
+            }
           }
 
           if (response && response.success) {
             currentPveMatch = response.match;
             closePveResignModal();
             renderPveResultModal(response.match);
-            showToast('Bạn đã xác nhận đầu hàng ván đấu.', 'info');
+            showToast(
+              response.match.endReason === 'RESIGN' ? 'Bạn đã xác nhận đầu hàng ván đấu.' : 'Ván đấu đã kết thúc trước đó.',
+              'info'
+            );
           }
         } catch (err) {
           if (pveResignError) {
@@ -963,6 +1018,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (event.room.isPublic && event.room.status !== 'CLOSED') {
           currentRooms.unshift(event.room);
         }
+        // REV-16: showToast đã tự escape -> không escape thêm (tránh hiện `&amp;`)
         showToast(`Trạng thái phòng [${event.room.code}] đã được cập nhật: ${window.ROOM_STATUS[event.room.status]?.label || event.room.status}`, 'info');
       }
 
@@ -981,17 +1037,24 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     clearInputError();
 
-    const rawCode = roomCodeInput.value.trim();
+    // REV-16: bắt buộc đăng nhập mới được vào phòng bằng mã
+    if (!requireLoginToJoin()) return;
+
+    const rawCode = normalizeRoomCode(roomCodeInput.value);
 
     // Validate 1: Kiểm tra mã trống
     if (!rawCode) {
-      showInputError('Vui lòng nhập mã phòng gồm 6 chữ số.');
+      showInputError('Vui lòng nhập mã phòng (6 chữ số, hoặc 10 ký tự nếu là phòng riêng tư).');
       return;
     }
 
-    // Validate 2: Kiểm tra định dạng 6 chữ số
-    if (!/^\d{6}$/.test(rawCode)) {
-      showInputError('Mã phòng không hợp lệ! Vui lòng nhập đúng 6 chữ số (ví dụ: 102938).');
+    // Validate 2: BE-14 — 6 chữ số (công khai) HOẶC 10 ký tự base32 Crockford (riêng tư), không phân biệt hoa/thường
+    if (!isValidRoomCode(rawCode)) {
+      showInputError(
+        /^\d+$/.test(rawCode)
+          ? 'Mã phòng không hợp lệ! Mã phòng công khai gồm đúng 6 chữ số (ví dụ: 102938).'
+          : 'Mã phòng không hợp lệ! Mã phòng riêng tư gồm đúng 10 ký tự chữ và số (ví dụ: 7K3M9QX2AB).'
+      );
       return;
     }
 
@@ -1077,13 +1140,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const btnClass = isFullOrPlaying ? 'btn-secondary' : 'btn-primary';
 
       return `
-        <article class="room-card" data-room-code="${room.code}">
+        <article class="room-card" data-room-code="${escapeHtml(room.code)}">
           <div>
             <div class="room-card-header">
               <span class="room-code-tag">#${escapeHtml(room.code)}</span>
-              <span class="status-badge ${statusMeta.className}">
-                <span>${statusMeta.icon}</span>
-                <span>${statusMeta.label}</span>
+              <span class="status-badge ${escapeHtml(statusMeta.className)}">
+                <span>${escapeHtml(statusMeta.icon)}</span>
+                <span>${escapeHtml(statusMeta.label)}</span>
               </span>
             </div>
 
@@ -1092,17 +1155,17 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="room-host">
               <span>Chủ phòng:</span>
               <strong>${escapeHtml(room.hostName)}</strong>
-              <span class="user-elo">(${room.hostElo} Elo)</span>
+              <span class="user-elo">(${Number(room.hostElo) || 0} Elo)</span>
             </div>
 
             <div class="room-meta-info">
               <div class="meta-item" title="Người chơi trong phòng">
                 <span>👤</span>
-                <span>${room.playerCount}/${room.maxPlayers} Kỳ thủ</span>
+                <span>${Number(room.playerCount) || 0}/${Number(room.maxPlayers) || 0} Kỳ thủ</span>
               </div>
               <div class="meta-item" title="Khán giả đang theo dõi">
                 <span>👁️</span>
-                <span>${room.spectatorCount} Khán giả</span>
+                <span>${Number(room.spectatorCount) || 0} Khán giả</span>
               </div>
               <div class="meta-item" title="Thời gian ván đấu">
                 <span>⏱️</span>
@@ -1131,9 +1194,22 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
+   * REV-16: chặn khách vào phòng; hiện form đăng nhập + thông báo.
+   * @returns {boolean} true nếu đã đăng nhập
+   */
+  function requireLoginToJoin() {
+    if (apiService.getCurrentUser()) return true;
+    openLoginModal();
+    showToast('Vui lòng đăng nhập để vào phòng.', 'warning');
+    return false;
+  }
+
+  /**
    * Tham gia phòng trực tiếp từ nút trên thẻ phòng
    */
   async function directJoinRoom(code) {
+    // REV-16: bắt buộc đăng nhập mới được vào phòng
+    if (!requireLoginToJoin()) return;
     try {
       const response = await apiService.joinRoomByCode(code);
       if (response.success) {
@@ -1312,7 +1388,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Đang có lời mời chờ phản hồi (đếm ngược 60 giây)
         actionHtml = `
           <div class="waiting-invite-box">
-            <span class="waiting-countdown">⏳ <strong id="cd-${friend.id}">${inviteInfo.remainingSec}s</strong></span>
+            <span class="waiting-countdown">⏳ <strong id="cd-${escapeHtml(friend.id)}">${Number(inviteInfo.remainingSec) || 0}s</strong></span>
             <button class="btn-cancel-invite" data-friend-id="${escapeHtml(friend.id)}" data-inv-id="${escapeHtml(inviteInfo.invitationId)}">
               Hủy mời
             </button>
@@ -1342,7 +1418,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="friend-details">
               <span class="friend-name">${escapeHtml(friend.displayName || friend.username)}</span>
               <div class="friend-meta">
-                <span>Elo: <strong>${friend.elo || 1200}</strong></span>
+                <span>Elo: <strong>${Number(friend.elo) || 1200}</strong></span>
                 <span>•</span>
                 <span class="friend-status-text ${isOnline ? 'online' : 'offline'}">
                   ${isOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
@@ -1498,6 +1574,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const rawName = roomNameInput ? roomNameInput.value.trim() : '';
 
     // Tiêu chí 2: Không gửi request nếu Tên Room để trống
+    // FE-03: bắt buộc đăng nhập mới được tạo phòng
+    if (!apiService.getCurrentUser()) {
+      closeCreateRoomModal();
+      openLoginModal();
+      showToast('Vui lòng đăng nhập để tạo phòng.', 'warning');
+      return;
+    }
+
     if (!rawName) {
       showCreateRoomError('Tên phòng không được để trống.');
       roomNameInput?.focus();
@@ -1622,6 +1706,28 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
+   * FE-04: chỉ chấp nhận URL ảnh an toàn (https hoặc /uploads/... hoặc data:image).
+   * Trả chuỗi rỗng nếu không hợp lệ để tránh chèn URL lạ vào thuộc tính src.
+   */
+  function safeAvatarUrl(url) {
+    const raw = typeof url === 'string' ? url.trim() : '';
+    if (!raw) return '';
+    if (raw.startsWith('/uploads/') && !raw.includes('..')) return raw;
+    if (/^https:\/\//i.test(raw)) return raw;
+    if (/^data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i.test(raw)) return raw;
+    return '';
+  }
+
+  /** FE-04: ảnh đại diện an toàn cho innerHTML (rỗng -> hiện ký tự đầu tên) */
+  function avatarMarkup(url, fallbackText) {
+    const safeUrl = safeAvatarUrl(url);
+    if (safeUrl) {
+      return `<img src="${escapeHtml(safeUrl)}" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+    }
+    return escapeHtml(String(fallbackText || '?').slice(0, 1));
+  }
+
+  /**
    * ===================================================================
    * COT-603: Xử lý luồng mở link mời phòng & Đăng nhập chuyển hướng
    * ===================================================================
@@ -1638,8 +1744,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (nameEl) nameEl.textContent = user.displayName || user.username || 'Kỳ Thủ';
       if (eloEl) eloEl.textContent = Number.isFinite(user.elo) ? user.elo : (user.eloRating || 1000);
       if (avatarEl) {
-        if (user.avatarUrl && (user.avatarUrl.startsWith('data:') || user.avatarUrl.startsWith('http') || user.avatarUrl.startsWith('/'))) {
-          avatarEl.innerHTML = `<img src="${escapeHtml(user.avatarUrl)}" alt="Avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+        // FE-04: chỉ render ảnh khi URL thuộc whitelist
+        const safeUrl = safeAvatarUrl(user.avatarUrl);
+        if (safeUrl) {
+          avatarEl.innerHTML = avatarMarkup(safeUrl, user.displayName);
         } else {
           avatarEl.textContent = user.avatar || (user.displayName ? user.displayName.charAt(0).toUpperCase() : '棋');
         }
@@ -1789,56 +1897,76 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * COT-580: Xử lý Đăng nhập nhanh Google / Facebook OAuth2
+   * SEC-05: Đăng nhập Google qua Google Identity Services (GIS).
+   * Facebook đã bị bỏ. Nếu chưa cấu hình VITE_GOOGLE_CLIENT_ID thì nút Google bị ẩn.
    */
-  async function handleOAuthLogin(provider) {
+  function getGoogleClientId() {
+    const meta = document.querySelector('meta[name="google-client-id"]');
+    const raw = (meta && meta.getAttribute('content')) || '';
+    if (!raw || raw.includes('%VITE_GOOGLE_CLIENT_ID%')) return '';
+    return raw.trim();
+  }
+
+  function showOAuthError(message) {
     if (oauthGeneralError) {
-      oauthGeneralError.textContent = '';
-      oauthGeneralError.style.display = 'none';
+      oauthGeneralError.textContent = message;
+      oauthGeneralError.style.display = 'block';
     }
+  }
 
+  async function completeGoogleLogin(credential) {
     try {
-      const mockOAuthToken = `${provider}_oauth_token_${Date.now()}`;
-      let res;
-      if (authService) {
-        res = await authService.loginWithOAuth(provider, { credential: mockOAuthToken, accessToken: mockOAuthToken });
-      } else {
-        res = {
-          success: true,
-          user: {
-            id: `oauth-${provider}`,
-            username: `${provider}_user`,
-            displayName: provider === 'google' ? 'Kỳ Thủ Google' : 'Kỳ Thủ Facebook',
-            elo: 1000,
-            avatar: provider === 'google' ? 'G' : 'F'
-          }
-        };
-      }
-
+      const res = await authService.loginWithOAuth('google', { credential });
       if (!res.success) {
-        if (oauthGeneralError) {
-          oauthGeneralError.textContent = res.error;
-          oauthGeneralError.style.display = 'block';
-        }
+        showOAuthError(res.error || 'Đăng nhập Google thất bại.');
         return;
       }
 
       apiService.setCurrentUser(res.user);
       updateUserAuthUi();
       closeLoginModal();
-      showToast(res.message || `Đăng nhập qua ${provider} thành công!`, 'success');
+      showToast('Đăng nhập Google thành công!', 'success');
 
-      // Chuyển hướng phòng đang chờ nếu có
       const redirectResult = await apiService.handlePostLoginRoomRedirect();
       if (redirectResult.hasPending && redirectResult.success && redirectResult.room) {
         openRoomModal(redirectResult.room, redirectResult.role, redirectResult.roleMessage);
       }
     } catch (err) {
-      if (oauthGeneralError) {
-        oauthGeneralError.textContent = err.message || 'Lỗi kết nối OAuth.';
-        oauthGeneralError.style.display = 'block';
-      }
+      showOAuthError(err.message || 'Lỗi kết nối OAuth.');
     }
+  }
+
+  function handleOAuthLogin(provider) {
+    if (oauthGeneralError) {
+      oauthGeneralError.textContent = '';
+      oauthGeneralError.style.display = 'none';
+    }
+
+    if (provider !== 'google') return;
+
+    const clientId = getGoogleClientId();
+    if (!clientId) {
+      showOAuthError('Đăng nhập Google chưa được cấu hình (VITE_GOOGLE_CLIENT_ID).');
+      return;
+    }
+
+    const gis = typeof window !== 'undefined' ? window.google : null;
+    if (!gis || !gis.accounts || !gis.accounts.id) {
+      showOAuthError('Chưa tải được Google Identity Services. Vui lòng thử lại sau.');
+      return;
+    }
+
+    gis.accounts.id.initialize({
+      client_id: clientId,
+      callback: (response) => {
+        if (response && response.credential) {
+          completeGoogleLogin(response.credential);
+        } else {
+          showOAuthError('Không nhận được ID token từ Google.');
+        }
+      },
+    });
+    gis.accounts.id.prompt();
   }
 
   /**
@@ -2007,10 +2135,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (profileSuccessBanner) profileSuccessBanner.style.display = 'none';
 
-    // Hiển thị Avatar hiện tại
-    if (user.avatarUrl && (user.avatarUrl.startsWith('data:') || user.avatarUrl.startsWith('http') || user.avatarUrl.startsWith('/'))) {
+    // Hiển thị Avatar hiện tại (FE-04: chỉ nhận URL thuộc whitelist)
+    const profileSafeAvatar = safeAvatarUrl(user.avatarUrl);
+    if (profileSafeAvatar) {
       if (profileAvatarImg) {
-        profileAvatarImg.src = user.avatarUrl;
+        profileAvatarImg.src = profileSafeAvatar;
         profileAvatarImg.style.display = 'block';
       }
       if (profileAvatarFallback) profileAvatarFallback.style.display = 'none';
@@ -2353,6 +2482,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (token) {
       openResetPasswordModal(token);
+      // FE-11: xoá token khỏi address bar để không lưu vào history/log
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('token');
+        url.searchParams.delete('resetToken');
+        const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+        window.history.replaceState({}, document.title, nextUrl);
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -2425,14 +2564,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (floatingChatWidget) floatingChatWidget.style.display = 'block';
     if (floatingChatRoomTitle) floatingChatRoomTitle.textContent = `Chat · #${room.code}`;
 
-    const currentUser = (apiService && apiService.getCurrentUser ? apiService.getCurrentUser() : null) || {
-      id: 'usr_sang',
-      name: 'Nguyễn Tấn Sang',
-      avatar: '桑',
+    // REV-16: bỏ user hardcode; chưa đăng nhập thì không có chat
+    const apiUser = apiService && apiService.getCurrentUser ? apiService.getCurrentUser() : null;
+    if (!apiUser) {
+      if (roomChatSection) roomChatSection.style.display = 'none';
+      if (floatingChatWidget) floatingChatWidget.style.display = 'none';
+      return;
+    }
+    const displayName = apiUser.displayName || apiUser.username || 'Kỳ thủ';
+    const currentUser = {
+      id: apiUser.id,
+      name: displayName,
+      avatar: apiUser.avatar || displayName.slice(0, 1),
       role: roleUpper
     };
-
-    currentUser.role = roleUpper;
 
     if (!activeChatService || activeChatService.roomId !== room.code) {
       if (typeof window.ChatService === 'function') {
@@ -2446,7 +2591,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (activeChatService) {
-      activeChatService.onChatEvent((event) => {
+      // FE-05: setupRoomChat chạy mỗi lần mở phòng -> huỷ listener cũ trước khi đăng ký lại,
+      // nếu không mỗi lần mở lại tin nhắn bị render N lần
+      if (typeof unsubscribeChatEvents === 'function') unsubscribeChatEvents();
+      unsubscribeChatEvents = activeChatService.onChatEvent((event) => {
         if (event.type === 'MESSAGE_ADDED' || event.type === 'MESSAGE_RECEIVED' || event.type === 'MESSAGE_STATUS_UPDATED') {
           renderChatMessages();
         } else if (event.type === 'CHAT_TOGGLED') {
@@ -2478,18 +2626,19 @@ document.addEventListener('DOMContentLoaded', () => {
             ${msg.status === 'SENDING' ? '<span class="status-sending">⏳ Đang gửi</span>' : ''}
             ${msg.status === 'SENT' ? '<span class="status-sent">✓ Đã gửi</span>' : ''}
             ${msg.status === 'FAILED' ? '<span class="status-failed">⚠️ Thất bại</span>' : ''}
+            ${msg.status === 'LOCAL' ? '<span class="status-local" title="Lobby chưa có kênh chat thời gian thực: tin chưa tới đối thủ. Hãy chat trong màn hình ván đấu.">💾 Chỉ lưu trên máy này</span>' : ''}
           </div>
         ` : '';
 
         return `
           <div class="chat-message-row ${isSelf ? 'message-self' : 'message-opponent'}">
             <div class="chat-bubble-avatar ${isSelf ? 'avatar-self' : 'avatar-opponent'}">
-              ${msg.senderAvatar || (msg.senderName ? msg.senderName.slice(0, 1) : '?')}
+              ${avatarMarkup(msg.senderAvatar, msg.senderName)}
             </div>
             <div class="chat-bubble-content">
               <div class="chat-bubble-meta">
                 <span class="chat-sender-name">${escapeHtml(msg.senderName)}</span>
-                <span class="chat-timestamp">${msg.timestamp}</span>
+                <span class="chat-timestamp">${escapeHtml(msg.timestamp)}</span>
               </div>
               <div class="chat-bubble-bubble">
                 <p class="chat-bubble-text">${escapeHtml(msg.text)}</p>
@@ -2561,15 +2710,6 @@ document.addEventListener('DOMContentLoaded', () => {
         floatingChatError.style.display = 'block';
       }
     }
-  }
-
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
   }
 
   // Khởi chạy

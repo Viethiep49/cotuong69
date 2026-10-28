@@ -81,14 +81,28 @@ class PgPveMatchRepository {
     return res.rows.length > 0 ? toMatch(res.rows[0]) : null;
   }
 
-  async saveMove({ matchId, expectedPly, board, sideToMove, move, now }) {
+  async saveMove({ matchId, expectedPly, board, sideToMove, move, now, outcome }) {
     return this.withTransaction(async (client) => {
-      const updated = await client.query(
-        `UPDATE pve_matches
-         SET board_state = $1, side_to_move = $2, ply = ply + 1, updated_at = $3, turn_started_at = $4
-         WHERE id = $5 AND ply = $6 AND status = 'PLAYING'`,
-        [JSON.stringify(board), sideToMove, now, now, matchId, expectedPly]
-      );
+      // FE-10: có `outcome` ({ result, endReason, finishedAt }) thì nước đi và kết thúc trận
+      // được ghi trong CÙNG transaction -> không có trạng thái "bàn cờ đã chiếu bí nhưng vẫn PLAYING"
+      const updated = outcome
+        ? await client.query(
+            `UPDATE pve_matches
+             SET board_state = $1, side_to_move = $2, ply = ply + 1, updated_at = $3, turn_started_at = $4,
+                 status = 'FINISHED', result = $5, end_reason = $6, finished_at = $7
+             WHERE id = $8 AND ply = $9 AND status = 'PLAYING'`,
+            [
+              JSON.stringify(board), sideToMove, now, now,
+              outcome.result, outcome.endReason, outcome.finishedAt || now,
+              matchId, expectedPly,
+            ]
+          )
+        : await client.query(
+            `UPDATE pve_matches
+             SET board_state = $1, side_to_move = $2, ply = ply + 1, updated_at = $3, turn_started_at = $4
+             WHERE id = $5 AND ply = $6 AND status = 'PLAYING'`,
+            [JSON.stringify(board), sideToMove, now, now, matchId, expectedPly]
+          );
       if (updated.rowCount !== 1) {
         return false;
       }
@@ -149,6 +163,29 @@ class PgPveMatchRepository {
            ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
           [userId, limit, offset]
         );
+    return res.rows.map(toMatchSummary);
+  }
+
+  /**
+   * FE-10: số trận PLAYING của một người chơi (giới hạn số trận đồng thời).
+   */
+  async countPlayingByUser(userId) {
+    const res = await this.db.query(
+      `SELECT COUNT(*) AS total FROM pve_matches WHERE user_id = $1 AND status = 'PLAYING'`,
+      [userId]
+    );
+    return Number(res.rows[0].total);
+  }
+
+  /**
+   * FE-10: các trận đang PLAYING (không kèm bàn cờ) cho sweeper, cũ nhất trước, tối đa `limit`.
+   */
+  async listPlaying({ limit = 200 } = {}) {
+    const res = await this.db.query(
+      `SELECT ${SUMMARY_COLUMNS} FROM pve_matches
+       WHERE status = 'PLAYING' ORDER BY updated_at ASC, id ASC LIMIT $1`,
+      [limit]
+    );
     return res.rows.map(toMatchSummary);
   }
 

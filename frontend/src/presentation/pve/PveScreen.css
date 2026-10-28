@@ -1,0 +1,181 @@
+/* PVE-UI: màn hình chơi với máy. Dùng lại bảng màu của trang trận (src/styles.css). */
+.pve-page {
+  min-height: 100vh;
+  padding: 0 42px 32px;
+  color: #e9e8e3;
+}
+
+.pve-topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 68px;
+  border-bottom: 1px solid #252d2f;
+}
+
+.pve-topbar h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #eeece5;
+}
+
+.pve-back {
+  color: #d6af68;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.pve-no-elo {
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid #283033;
+  border-radius: 999px;
+  color: #818b8c;
+  font-size: 12px;
+}
+
+.pve-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 640px) minmax(260px, 340px);
+  gap: 28px;
+  justify-content: center;
+  padding-top: 24px;
+}
+
+.pve-board-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pve-board-wrap { width: 100%; }
+
+.pve-seat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid #283033;
+  border-radius: 10px;
+  background: #171d20;
+}
+
+.pve-seat.is-active { border-color: #d6af68; }
+
+.pve-seat-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+.pve-seat-dot.red { background: #c84d3f; }
+.pve-seat-dot.black { background: #3a3d38; border: 1px solid #818b8c; }
+
+.pve-seat-text { display: flex; flex-direction: column; }
+.pve-seat-text span { color: #818b8c; font-size: 12px; }
+
+.pve-chip {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(214, 175, 104, .16);
+  color: #d6af68;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pve-alert {
+  padding: 10px 14px;
+  border: 1px solid #8f2e27;
+  border-radius: 8px;
+  background: rgba(200, 77, 63, .12);
+  color: #f0a79f;
+}
+
+.pve-side { display: flex; flex-direction: column; gap: 16px; }
+
+.pve-card {
+  padding: 16px;
+  border: 1px solid #283033;
+  border-radius: 12px;
+  background: #171d20;
+}
+.pve-card h2 { margin: 0 0 10px; font-size: 14px; color: #818b8c; letter-spacing: .04em; }
+
+.pve-turn { margin: 0 0 12px; font-size: 20px; font-weight: 600; }
+.pve-turn.is-player { color: #d6af68; }
+
+.pve-facts { margin: 0; display: grid; gap: 8px; }
+.pve-facts > div { display: flex; justify-content: space-between; gap: 12px; }
+.pve-facts dt { color: #818b8c; }
+.pve-facts dd { margin: 0; font-weight: 600; text-align: right; }
+
+.pve-clock { font-variant-numeric: tabular-nums; }
+.pve-clock.is-low { color: #f0a79f; }
+
+.pve-hint { margin: 12px 0 0; color: #818b8c; font-size: 12px; }
+
+.pve-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.pve-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  border: 1px solid #283033;
+  border-radius: 8px;
+  background: #1e2528;
+  color: #e9e8e3;
+  text-decoration: none;
+  cursor: pointer;
+}
+.pve-btn:hover:not(:disabled) { border-color: #d6af68; }
+.pve-btn:disabled { opacity: .6; cursor: not-allowed; }
+.pve-btn-primary { background: #d6af68; border-color: #d6af68; color: #1a1408; font-weight: 600; }
+.pve-btn-danger { border-color: #8f2e27; color: #f0a79f; }
+
+.pve-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 60vh;
+  padding: 24px;
+  text-align: center;
+  color: #e9e8e3;
+}
+.pve-state-actions { display: flex; gap: 10px; }
+
+.pve-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(8, 10, 10, .72);
+}
+
+.pve-modal {
+  width: min(420px, 100%);
+  padding: 22px;
+  border: 1px solid #283033;
+  border-radius: 14px;
+  background: #171d20;
+  color: #e9e8e3;
+}
+.pve-modal h2 { margin: 0 0 8px; }
+.pve-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+
+.pve-result-win h2 { color: #7fd18b; }
+.pve-result-loss h2 { color: #f0a79f; }
+.pve-result-draw h2 { color: #d6af68; }
+.pve-result-unknown h2 { color: #e9e8e3; }
+
+@media (max-width: 900px) {
+  .pve-page { padding: 0 16px 24px; }
+  .pve-layout { grid-template-columns: minmax(0, 1fr); }
+}

@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 const { test, describe, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
@@ -44,6 +45,16 @@ describe('Nghiệm thu Task COT-593: [2.4] [BE] Xây dựng cơ chế Heartbeat 
     roomHub = new RoomHub({
       roomManager,
       tokenService: fakeTokenService,
+      // REV-05: WS giờ kiểm tra phiên trong DB -> dùng repo giả luôn ACTIVE
+      userRepository: {
+        findById: async (id) => ({
+          id,
+          status: 'ACTIVE',
+          passwordChangedAt: null,
+          username: 'heartbeat_user',
+          displayName: 'Heartbeat',
+        }),
+      },
       heartbeatIntervalMs: 50, // Chu kỳ ping nhanh trong kiểm thử
       heartbeatTimeoutMs: 150, // Timeout nhanh trong kiểm thử
       reconnectCountdownSeconds: 60,
@@ -103,28 +114,35 @@ describe('Nghiệm thu Task COT-593: [2.4] [BE] Xây dựng cơ chế Heartbeat 
 
   // AC 1: Tín hiệu Heartbeat (Ping/Pong)
   describe('1. Tín hiệu Heartbeat (Ping/Pong) định kỳ & Ghi nhận timestamp', () => {
-    test('Máy chủ phát gói Ping định kỳ và cập nhật lastSeen / lastPong khi nhận gói Pong', async () => {
+    test('Máy chủ phát ping frame của protocol và cập nhật lastSeen / lastPong khi nhận pong frame', async () => {
       const { ws, messages } = await connectClient('host-token');
       await waitForMessage(messages, 'Connected');
 
-      // Kích hoạt chu kỳ Ping
-      roomHub.checkHeartbeats();
+      // REV-12: ping ở mức protocol -> thư viện ws (giống trình duyệt) tự trả pong
+      let pingFrames = 0;
+      ws.on('ping', () => { pingFrames += 1; });
 
-      const pingMsg = await waitForMessage(messages, 'ping');
-      assert.ok(pingMsg.timestamp, 'Gói ping phải có trường timestamp');
-
-      // Lấy metadata socket hiện tại trên Hub
       const socketEntries = Array.from(roomHub.clients.entries());
       assert.strictEqual(socketEntries.length, 1);
       const [, meta] = socketEntries[0];
       const previousPong = meta.lastPong;
+      meta.lastSeen = Date.now() - 100;
 
-      // Client gửi phản hồi Pong
       await new Promise((r) => setTimeout(r, 20));
-      ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+      roomHub.checkHeartbeats();
 
+      await new Promise((r) => setTimeout(r, 80));
+      assert.strictEqual(pingFrames, 1, 'Phải nhận đúng 1 ping frame (không phải JSON {type:"ping"})');
+      assert.ok(!messages.some((m) => m && m.type === 'ping'), 'Không còn gửi JSON ping');
+      assert.ok(meta.lastPong > previousPong, 'lastPong phải được cập nhật bởi pong frame tự động');
+      assert.ok(Date.now() - meta.lastSeen < 100, 'lastSeen phải được làm mới bởi pong frame');
+
+      // Vẫn chấp nhận {type:'pong'} JSON cũ để tương thích
+      const beforeLegacy = meta.lastPong;
+      await new Promise((r) => setTimeout(r, 10));
+      ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
       await new Promise((r) => setTimeout(r, 50));
-      assert.ok(meta.lastPong >= previousPong, 'lastPong của socket phải được cập nhật mới nhất sau khi nhận pong');
+      assert.ok(meta.lastPong >= beforeLegacy);
 
       ws.close();
     });
@@ -214,7 +232,9 @@ describe('Nghiệm thu Task COT-593: [2.4] [BE] Xây dựng cơ chế Heartbeat 
       assert.strictEqual(testRoom.getRemainingTurnSeconds(), frozenSeconds, 'Đồng hồ nước đi không được trừ khi đang tạm dừng chờ reconnect');
 
       // 5. Kiểm tra bộ đếm 60s tại máy chủ
-      assert.ok(roomHub.disconnectTimers.has(testRoom.code), 'Máy chủ phải duy trì disconnect timer cho phòng');
+      // BE-06: timer giờ theo từng bên -> khoá `${roomCode}:${side}`
+      const hasTimer = Array.from(roomHub.disconnectTimers.keys()).some((key) => key.startsWith(`${testRoom.code}:`));
+      assert.ok(hasTimer, 'Máy chủ phải duy trì disconnect timer cho phòng');
       assert.ok(testRoom.reconnectState, 'Room phải ghi nhận reconnectState');
       assert.strictEqual(testRoom.reconnectState.disconnectedUserId, opponentUser.id);
 

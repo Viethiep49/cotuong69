@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-589:
  * Tạo liên kết mời tham gia phòng (Deep link) & phân vai trò (Player / Spectator tối đa 10)
@@ -12,13 +13,13 @@ process.env.DB_CLIENT = 'sqlite';
 const db = require('../src/config/db');
 const { runMigrations } = require('../src/migrations/migrate');
 const PgUserRepository = require('../src/infrastructure/database/repositories/PgUserRepository');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
-const LoginUserUseCase = require('../src/application/useCases/loginUser');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
 const Room = require('../src/domain/entities/Room');
 const { RoomManager } = require('../src/infrastructure/database/repositories/RoomManager');
-const CreateRoomUseCase = require('../src/application/useCases/room/createRoom');
-const GetRoomByCodeUseCase = require('../src/application/useCases/room/getRoomByCode');
-const JoinRoomByLinkUseCase = require('../src/application/useCases/room/joinRoomByLink');
+const CreateRoomUseCase = require('../src/application/use-cases/room/createRoom');
+const GetRoomByCodeUseCase = require('../src/application/use-cases/room/getRoomByCode');
+const JoinRoomByLinkUseCase = require('../src/application/use-cases/room/joinRoomByLink');
 const { createServer } = require('../src/server');
 
 describe('Nghiệm thu Task COT-589: Tạo liên kết mời phòng & Phân vai trò', () => {

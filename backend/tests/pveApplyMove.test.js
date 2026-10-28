@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * COT-634: Áp dụng nước đi của người chơi trong trận PvE qua engine luật cờ dùng chung
  */

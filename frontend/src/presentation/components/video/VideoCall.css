@@ -433,3 +433,31 @@
   padding: 1px 3px;
   border-radius: 3px;
 }
+
+/* FE-07: lỗi / ghi chú của cuộc gọi (trước đây lỗi không hiển thị) */
+.video-call-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.video-call-error,
+.video-call-notice {
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.video-call-error {
+  background: rgba(220, 53, 69, 0.12);
+  border: 1px solid rgba(220, 53, 69, 0.45);
+  color: #b02a37;
+}
+
+.video-call-notice {
+  background: rgba(255, 193, 7, 0.14);
+  border: 1px solid rgba(255, 193, 7, 0.5);
+  color: #7a5b00;
+}

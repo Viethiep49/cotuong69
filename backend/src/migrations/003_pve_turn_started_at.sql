@@ -4,7 +4,7 @@
 -- Mô tả: Lưu thời điểm bắt đầu lượt hiện tại để xử lý người chơi hết 60 giây cho một lượt
 -- ====================================================================
 
-ALTER TABLE pve_matches ADD COLUMN turn_started_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE pve_matches ADD COLUMN IF NOT EXISTS turn_started_at TIMESTAMP WITH TIME ZONE;
 
 UPDATE pve_matches SET turn_started_at = updated_at WHERE turn_started_at IS NULL;
 

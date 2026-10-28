@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { performance } = require('node:perf_hooks');

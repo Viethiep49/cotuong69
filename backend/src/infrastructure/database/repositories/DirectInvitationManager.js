@@ -1,9 +1,43 @@
 const crypto = require('node:crypto');
 
 class DirectInvitationManager {
-  constructor({ timeoutSeconds = 60 } = {}) {
+  constructor({ timeoutSeconds = 60, sweepIntervalMs = 60 * 1000 } = {}) {
     this.timeoutMs = timeoutSeconds * 1000;
     this.invitations = new Map(); // id -> invitation
+
+    // BE-08: dọn lời mời cũ để Map không phình vô hạn
+    this.sweepIntervalMs = Number(sweepIntervalMs);
+    if (this.sweepIntervalMs > 0) {
+      this.sweeper = setInterval(() => this.sweep(), this.sweepIntervalMs);
+      if (this.sweeper.unref) this.sweeper.unref();
+    }
+  }
+
+  /**
+   * BE-08: xoá lời mời đã hết hạn/đã xử lý quá lâu khỏi bộ nhớ.
+   * @returns {number} số lời mời bị xoá
+   */
+  sweep(now = Date.now(), keepMs = 10 * 60 * 1000) {
+    let removed = 0;
+    for (const [id, inv] of Array.from(this.invitations.entries())) {
+      const expired = inv.expiresAt instanceof Date ? inv.expiresAt.getTime() : new Date(inv.expiresAt).getTime();
+      const isPending = inv.status === 'PENDING';
+      if (isPending && Number.isFinite(expired) && now > expired) {
+        inv.status = 'EXPIRED';
+      }
+      if (!isPending && Number.isFinite(expired) && now - expired > keepMs) {
+        this.invitations.delete(id);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  stopSweeper() {
+    if (this.sweeper) {
+      clearInterval(this.sweeper);
+      this.sweeper = null;
+    }
   }
 
   createInvitation({ sender, receiver, roomCode, timeoutMs = this.timeoutMs }) {

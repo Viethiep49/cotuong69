@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import XiangqiBoard from './presentation/components/board/XiangqiBoard';
 import ChatBox from './presentation/components/chat/ChatBox';
+import { sideLabel } from './domain/chat/chatMessages';
 import VideoCallOverlay from './presentation/components/video/VideoCallOverlay';
 import { useMatch } from './application/hooks/useMatch';
 import { useWebRtcCall } from './application/hooks/useWebRtcCall';
+import { parseRoomCodeParam } from './domain/network/roomCodeParam';
+import { BoardSyncManager } from './domain/game/boardSyncManager';
+import { moveSoundPlayer } from './infrastructure/sound/moveSound';
 import './styles.css';
 
 function formatClock(seconds = 0) {
@@ -87,31 +91,14 @@ function CapturedTray({ color, pieces }) {
   );
 }
 
-function playMoveSound(captured) {
-  const AudioContextType = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextType) return;
-
-  const audio = new AudioContextType();
-  const oscillator = audio.createOscillator();
-  const gain = audio.createGain();
-  oscillator.type = 'sine';
-  oscillator.frequency.value = captured ? 520 : 660;
-  gain.gain.setValueAtTime(0.0001, audio.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.12, audio.currentTime + 0.012);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.16);
-  oscillator.connect(gain);
-  gain.connect(audio.destination);
-  oscillator.start();
-  oscillator.stop(audio.currentTime + 0.17);
-  oscillator.addEventListener('ended', () => audio.close());
-}
-
 function App() {
-  const matchId = new URLSearchParams(window.location.search).get('matchId');
+  const searchParams = new URLSearchParams(window.location.search);
+  const matchId = searchParams.get('matchId');
+  // FE-01: có roomCode hợp lệ -> signaling cuộc gọi đi qua roomHub; không có (demo) -> WS của trận
+  const roomCode = parseRoomCodeParam(searchParams.get('roomCode'));
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [perspectiveEnabled, setPerspectiveEnabled] = useState(false);
   const [captureEffect, setCaptureEffect] = useState(null);
-  const [capturedPieces, setCapturedPieces] = useState({ red: [], black: [] });
   const previousMoveRef = useRef(undefined);
   const previousBoardRef = useRef(null);
   const captureEffectTimeoutRef = useRef(null);
@@ -133,8 +120,11 @@ function App() {
     simulateOpponentReconnect,
     simulateServerMatchResult,
     sendSignaling,
+    isSignalingReady,
+    signalingError,
     setSignalingHandler,
-  } = useMatch(matchId);
+    subscribeChat,
+  } = useMatch(matchId, { roomCode });
 
   const currentUserName = color === 'red' ? match?.players?.red?.name : color === 'black' ? match?.players?.black?.name : 'Khán Giả';
   const opponentUserName = color === 'red' ? match?.players?.black?.name : color === 'black' ? match?.players?.red?.name : 'Đối thủ';
@@ -147,6 +137,8 @@ function App() {
     isMicMuted,
     isCamOff,
     isRemoteCamOff,
+    error: callError,
+    notice: callNotice,
     startCall,
     acceptCall,
     rejectCall,
@@ -156,6 +148,7 @@ function App() {
     handleSignalingMessage,
   } = useWebRtcCall({
     sendSignaling,
+    isSignalingReady,
     isSpectator: readOnly,
     userName: currentUserName || 'Bạn',
     opponentName: opponentUserName || 'Đối thủ',
@@ -166,6 +159,24 @@ function App() {
       setSignalingHandler(handleSignalingMessage);
     }
   }, [setSignalingHandler, handleSignalingMessage]);
+
+  // FE-08: khay quân bị bắt tính từ bàn cờ hiện tại (đúng cả khi tải lại trang / kết nối lại),
+  // không cộng dồn theo từng lastMove như trước.
+  const capturedPieces = useMemo(
+    () => (match?.board ? BoardSyncManager.deriveCapturedPieces(match.board) : { red: [], black: [] }),
+    [match?.board],
+  );
+
+  // FE-08: mở khóa AudioContext dùng chung ở thao tác đầu tiên của người dùng
+  useEffect(() => {
+    const unlock = () => moveSoundPlayer.unlock();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
 
   useEffect(() => {
     document.body.classList.toggle('match-view', Boolean(matchId));
@@ -185,18 +196,12 @@ function App() {
       return;
     }
     if (lastMoveKey && previousMoveRef.current !== lastMoveKey) {
-      if (soundEnabled) playMoveSound(Boolean(lastMove.captured));
+      if (soundEnabled) moveSoundPlayer.play(Boolean(lastMove.captured));
       if (lastMove.captured) {
         const capturedPiece = previousBoardRef.current?.find(
           (piece) => piece.position === lastMove.to && piece.color !== lastMove.color,
         );
         setCaptureEffect({ key: lastMoveKey, position: lastMove.to, capturedPiece });
-        if (capturedPiece) {
-          setCapturedPieces((current) => ({
-            ...current,
-            [capturedPiece.color]: [...current[capturedPiece.color], capturedPiece],
-          }));
-        }
         window.clearTimeout(captureEffectTimeoutRef.current);
         captureEffectTimeoutRef.current = window.setTimeout(() => {
           setCaptureEffect(null);
@@ -206,19 +211,6 @@ function App() {
     previousMoveRef.current = lastMoveKey;
     previousBoardRef.current = match.board;
   }, [lastMove, lastMoveKey, match, soundEnabled]);
-
-  useEffect(() => {
-    if (match?.capturedPieces) {
-      setCapturedPieces((current) => {
-        const redFromMatch = Array.isArray(match.capturedPieces.red) ? match.capturedPieces.red : [];
-        const blackFromMatch = Array.isArray(match.capturedPieces.black) ? match.capturedPieces.black : [];
-        if (redFromMatch.length > 0 || blackFromMatch.length > 0) {
-          return { red: redFromMatch, black: blackFromMatch };
-        }
-        return current;
-      });
-    }
-  }, [match?.capturedPieces]);
 
   useEffect(() => () => window.clearTimeout(captureEffectTimeoutRef.current), []);
 
@@ -298,43 +290,45 @@ function App() {
                 </span>
               </label>
 
-              {/* COT-601: Công cụ kiểm thử giả lập Mạng & Đối thủ */}
-              <div className="simulation-tools-group">
-                <span className="simulation-title">Kiểm thử mạng (COT-601)</span>
-                <button
-                  type="button"
-                  className="btn-sim"
-                  onClick={() => {
-                    if (reconnectState.selfDisconnected) simulateSelfReconnect();
-                    else simulateSelfDisconnect();
-                  }}
-                >
-                  {reconnectState.selfDisconnected ? '✓ Kết nối lại bản thân' : '⚡ Giả lập mất mạng bản thân'}
-                </button>
-                <button
-                  type="button"
-                  className="btn-sim"
-                  onClick={() => {
-                    if (reconnectState.opponentDisconnected) simulateOpponentReconnect();
-                    else simulateOpponentDisconnect(60);
-                  }}
-                >
-                  {reconnectState.opponentDisconnected ? '✓ Đối thủ kết nối lại' : '⚠️ Giả lập đối thủ mất mạng (60s)'}
-                </button>
-                <button
-                  type="button"
-                  className="btn-sim"
-                  onClick={() => {
-                    simulateServerMatchResult({
-                      winner: color || 'red',
-                      winnerColor: color || 'red',
-                      reason: 'DISCONNECT_TIMEOUT',
-                    });
-                  }}
-                >
-                  🏆 Máy chủ chốt kết quả (Timeout)
-                </button>
-              </div>
+              {/* FE-06: công cụ giả lập chỉ có ở bản dev, không lọt vào bản build production */}
+              {import.meta.env.DEV && (
+                <div className="simulation-tools-group">
+                  <span className="simulation-title">Kiểm thử mạng (COT-601)</span>
+                  <button
+                    type="button"
+                    className="btn-sim"
+                    onClick={() => {
+                      if (reconnectState.selfDisconnected) simulateSelfReconnect();
+                      else simulateSelfDisconnect();
+                    }}
+                  >
+                    {reconnectState.selfDisconnected ? '✓ Kết nối lại bản thân' : '⚡ Giả lập mất mạng bản thân'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-sim"
+                    onClick={() => {
+                      if (reconnectState.opponentDisconnected) simulateOpponentReconnect();
+                      else simulateOpponentDisconnect(60);
+                    }}
+                  >
+                    {reconnectState.opponentDisconnected ? '✓ Đối thủ kết nối lại' : '⚠️ Giả lập đối thủ mất mạng (60s)'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-sim"
+                    onClick={() => {
+                      simulateServerMatchResult({
+                        winner: color || 'red',
+                        winnerColor: color || 'red',
+                        reason: 'DISCONNECT_TIMEOUT',
+                      });
+                    }}
+                  >
+                    🏆 Máy chủ chốt kết quả (Timeout)
+                  </button>
+                </div>
+              )}
             </div>
           </details>
         </div>
@@ -522,6 +516,8 @@ function App() {
             isCamOff={isCamOff}
             isRemoteCamOff={isRemoteCamOff}
             isSpectator={readOnly}
+            error={callError || signalingError}
+            notice={callNotice}
             userName={currentUserName || 'Bạn'}
             opponentName={opponentUserName || 'Đối thủ'}
             onStartCall={startCall}
@@ -616,12 +612,15 @@ function App() {
       <ChatBox
         roomId={match.matchCode || matchId}
         currentUser={{
+          // FE-05: tên theo phe (Đỏ/Đen/Khán giả); server sẽ trả tên thật khi ack
           id: color === 'red' ? 'player_red' : color === 'black' ? 'player_black' : 'spectator_user',
-          name: color === 'red' ? match.players.red.name : color === 'black' ? match.players.black.name : 'Khán Giả',
+          name: sideLabel(color),
           avatar: color === 'red' ? '帥' : color === 'black' ? '將' : '観',
         }}
         role={readOnly ? 'SPECTATOR' : color === 'red' ? 'HOST' : 'PLAYER'}
         readOnly={readOnly}
+        onSendMessage={(msg) => sendSignaling({ type: 'chat:send', text: msg.text, clientId: msg.clientId })}
+        subscribeChat={subscribeChat}
       />
     </main>
   );

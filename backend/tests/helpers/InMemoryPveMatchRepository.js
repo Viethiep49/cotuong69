@@ -50,7 +50,7 @@ class InMemoryPveMatchRepository {
     return stored ? this.toMatch(stored) : null;
   }
 
-  async saveMove({ matchId, expectedPly, board, sideToMove, move, now }) {
+  async saveMove({ matchId, expectedPly, board, sideToMove, move, now, outcome }) {
     const stored = this.matches.get(Number(matchId));
     if (!stored || stored.status !== 'PLAYING' || stored.ply !== expectedPly) {
       return false;
@@ -60,6 +60,12 @@ class InMemoryPveMatchRepository {
     stored.ply += 1;
     stored.updatedAt = now;
     stored.turnStartedAt = now;
+    if (outcome) {
+      stored.status = 'FINISHED';
+      stored.result = outcome.result;
+      stored.endReason = outcome.endReason;
+      stored.finishedAt = outcome.finishedAt || now;
+    }
     this.moves.get(stored.id).push({ ...clone(move), ply: stored.ply, createdAt: now });
     return true;
   }
@@ -85,6 +91,23 @@ class InMemoryPveMatchRepository {
       .filter((m) => String(m.userId) === String(userId) && (!status || m.status === status))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
       .slice(offset, offset + limit)
+      .map((m) => {
+        const { board, ...summary } = this.toMatch(m);
+        return summary;
+      });
+  }
+
+  async countPlayingByUser(userId) {
+    return [...this.matches.values()].filter(
+      (m) => String(m.userId) === String(userId) && m.status === 'PLAYING'
+    ).length;
+  }
+
+  async listPlaying({ limit = 200 } = {}) {
+    return [...this.matches.values()]
+      .filter((m) => m.status === 'PLAYING')
+      .sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)) || a.id - b.id)
+      .slice(0, limit)
       .map((m) => {
         const { board, ...summary } = this.toMatch(m);
         return summary;

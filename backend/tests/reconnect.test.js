@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 const { test, describe, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
@@ -41,6 +42,10 @@ describe('Nghiệm thu Task COT-594: [2.4] [BE] Xử lý Auto-reconnect và khô
     roomHub = new RoomHub({
       roomManager,
       tokenService: fakeTokenService,
+      // REV-05: WS kiểm tra phiên trong DB -> repo giả luôn ACTIVE
+      userRepository: {
+        findById: async (id) => ({ id, status: 'ACTIVE', passwordChangedAt: null, username: 'rc_user', displayName: 'RC' }),
+      },
       heartbeatIntervalMs: 50,
       heartbeatTimeoutMs: 150,
       reconnectCountdownSeconds: 60,
@@ -128,7 +133,9 @@ describe('Nghiệm thu Task COT-594: [2.4] [BE] Xử lý Auto-reconnect và khô
       const disconnectNotice = await waitForMessage(host.messages, 'PlayerDisconnected');
       assert.strictEqual(disconnectNotice.userId, opponentUser.id);
       assert.strictEqual(testRoom.matchState.isPaused, true);
-      assert.ok(roomHub.disconnectTimers.has(testRoom.code), 'Timer 60s phải đang hoạt động');
+      // BE-06: timer theo từng bên
+      const hasTimer = Array.from(roomHub.disconnectTimers.keys()).some((key) => key.startsWith(`${testRoom.code}:`));
+      assert.ok(hasTimer, 'Timer 60s phải đang hoạt động');
 
       const frozenClock = testRoom.matchState.turnRemainingSeconds;
 
@@ -150,7 +157,8 @@ describe('Nghiệm thu Task COT-594: [2.4] [BE] Xử lý Auto-reconnect và khô
       assert.strictEqual(cannonPiece.position, 'e2', 'Vị trí Pháo Đỏ phải là e2 như trước khi mất mạng');
 
       // 2. Hủy bộ đếm thời gian 60s
-      assert.strictEqual(roomHub.disconnectTimers.has(testRoom.code), false, 'Timer 60s phải được hủy ngay khi kết nối lại');
+      const hasTimerAfter = Array.from(roomHub.disconnectTimers.keys()).some((key) => key.startsWith(`${testRoom.code}:`));
+      assert.strictEqual(hasTimerAfter, false, 'Timer 60s phải được hủy ngay khi kết nối lại');
       assert.strictEqual(testRoom.reconnectState, null, 'reconnectState phải được dọn dẹp');
 
       // 3. Ván đấu tiếp tục, đồng hồ lượt đi tiếp tục từ số giây đã lưu

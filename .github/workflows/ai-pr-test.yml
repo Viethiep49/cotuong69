@@ -1,117 +1,128 @@
-name: AI PR Quality Gate & Test Automation
+name: PR Tests
+
+# SEC-04: workflow này CHỈ chạy test trên code của PR.
+# - Trigger là `pull_request` (không dùng trigger nào chạy trong ngữ cảnh base
+#   repo cho code PR) => PR từ fork chạy với GITHUB_TOKEN chỉ có quyền đọc và
+#   KHÔNG có secret nào.
+# - Không có quyền ghi, không có bước AI/Jira, không auto-merge.
+# - `shell: bash` => GitHub chạy `bash --noprofile --norc -eo pipefail`, nên
+#   `npm test | tee ...` không còn che giấu lỗi test (thêm `set -euo pipefail`).
+# - Không có bất kỳ cơ chế nuốt lỗi nào: test/build fail thì job fail.
+# Bước AI/Jira đã chuyển sang `.github/workflows/ai-pr-review.yml` (workflow_run).
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
+
+concurrency:
+  group: pr-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   test_and_verify:
     name: Test and Verify
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        # v4 (pin theo commit SHA)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-          allow-unsafe-pr-checkout: true
+          # Không để credential trong .git/config: code của PR (postinstall,
+          # test, build) không thể dùng token để push/ghi.
+          persist-credentials: false
+          fetch-depth: 1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        # v4 (pin theo commit SHA)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 24
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
+          node-version: '24'
 
       - name: Install Dependencies
+        shell: bash
         run: |
+          set -euo pipefail
           if [ -f "backend/package.json" ]; then
             echo "📦 Cài đặt thư viện Backend..."
-            cd backend && npm install && cd ..
+            cd backend
+            if [ -f package-lock.json ]; then npm ci; else npm install; fi
+            cd ..
           fi
           if [ -f "frontend/package.json" ]; then
             echo "📦 Cài đặt thư viện Frontend..."
-            cd frontend && npm install && cd ..
+            cd frontend
+            if [ -f package-lock.json ]; then npm ci; else npm install; fi
+            cd ..
           fi
 
       - name: Run Backend Tests
         id: test_backend
+        shell: bash
         run: |
+          set -euo pipefail
           if [ -f "backend/package.json" ]; then
             cd backend
             npm test 2>&1 | tee ../backend_test.log
           else
             echo "Không có backend/package.json, bỏ qua backend tests."
           fi
-        continue-on-error: true
 
-      - name: Run Frontend Tests & Build
-        id: build_frontend
+      - name: Run Frontend Tests
+        id: test_frontend
+        if: always()
+        shell: bash
         run: |
+          set -euo pipefail
           if [ -f "frontend/package.json" ]; then
             cd frontend
-            npm test 2>&1 | tee ../frontend_test.log || true
+            npm test 2>&1 | tee ../frontend_test.log
+          else
+            echo "Không có frontend/package.json, bỏ qua frontend tests."
+          fi
+
+      - name: Build Frontend
+        id: build_frontend
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f "frontend/package.json" ]; then
+            cd frontend
             npm run build 2>&1 | tee ../frontend_build.log
           else
-            echo "Không có frontend/package.json, bỏ qua frontend tests & build."
+            echo "Không có frontend/package.json, bỏ qua frontend build."
           fi
-        continue-on-error: true
 
-      - name: AI Quality Gate & Scope Verification
+      - name: Ghi lại kết quả từng bước
+        if: always()
+        shell: bash
         env:
-          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL || 'https://cotuong69.atlassian.net' }}
-          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
-          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_BRANCH: ${{ github.head_ref || github.event.pull_request.head.ref }}
-          BASE_REF: ${{ github.base_ref || 'main' }}
           BACKEND_OUTCOME: ${{ steps.test_backend.outcome }}
-          FRONTEND_OUTCOME: ${{ steps.build_frontend.outcome }}
-        run: python3 .github/scripts/ai_pr_tester.py
+          FRONTEND_TEST_OUTCOME: ${{ steps.test_frontend.outcome }}
+          FRONTEND_BUILD_OUTCOME: ${{ steps.build_frontend.outcome }}
+        run: |
+          set -euo pipefail
+          printf 'backend_tests=%s\nfrontend_tests=%s\nfrontend_build=%s\n' \
+            "${BACKEND_OUTCOME:-skipped}" \
+            "${FRONTEND_TEST_OUTCOME:-skipped}" \
+            "${FRONTEND_BUILD_OUTCOME:-skipped}" > ci-outcome.env
+          cat ci-outcome.env
 
-  auto_merge:
-    name: Auto Merge on Pass
-    needs: test_and_verify
-    if: success()
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Upload CI logs
+        if: always()
+        # v4 (pin theo commit SHA)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          python-version: '3.x'
-
-      - name: Execute Auto Merge
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BRANCH: ${{ github.head_ref || github.event.pull_request.head.ref }}
-          BASE_REF: ${{ github.base_ref || 'main' }}
-        run: python3 .github/scripts/auto_merge_pr.py
+          name: ci-logs
+          path: |
+            backend_test.log
+            frontend_test.log
+            frontend_build.log
+            ci-outcome.env
+          if-no-files-found: warn
+          retention-days: 14

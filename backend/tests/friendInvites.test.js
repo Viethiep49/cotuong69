@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Kiểm thử nghiệm thu Task COT-590:
  * Lấy danh sách bạn bè Online & gửi lời mời trực tiếp (60s countdown, không giữ chỗ trước)
@@ -16,12 +17,12 @@ const PgFriendRepository = require('../src/infrastructure/database/repositories/
 const { OnlineUserManager } = require('../src/infrastructure/database/repositories/OnlineUserManager');
 const { DirectInvitationManager } = require('../src/infrastructure/database/repositories/DirectInvitationManager');
 const { RoomManager } = require('../src/infrastructure/database/repositories/RoomManager');
-const RegisterUserUseCase = require('../src/application/useCases/registerUser');
-const LoginUserUseCase = require('../src/application/useCases/loginUser');
-const GetOnlineFriendsUseCase = require('../src/application/useCases/friends/getOnlineFriends');
-const SendDirectInvitationUseCase = require('../src/application/useCases/friends/sendDirectInvitation');
-const RespondDirectInvitationUseCase = require('../src/application/useCases/friends/respondDirectInvitation');
-const CancelDirectInvitationUseCase = require('../src/application/useCases/friends/cancelDirectInvitation');
+const RegisterUserUseCase = require('../src/application/use-cases/auth/registerUser');
+const LoginUserUseCase = require('../src/application/use-cases/auth/loginUser');
+const GetOnlineFriendsUseCase = require('../src/application/use-cases/friends/getOnlineFriends');
+const SendDirectInvitationUseCase = require('../src/application/use-cases/friends/sendDirectInvitation');
+const RespondDirectInvitationUseCase = require('../src/application/use-cases/friends/respondDirectInvitation');
+const CancelDirectInvitationUseCase = require('../src/application/use-cases/friends/cancelDirectInvitation');
 const { createServer } = require('../src/server');
 
 describe('Nghiệm thu Task COT-590: Bạn bè Online & Gửi lời mời trực tiếp', () => {

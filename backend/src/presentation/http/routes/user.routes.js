@@ -1,16 +1,15 @@
 const { URL } = require('node:url');
-const { authenticateRequest } = require('../middlewares/authMiddleware');
-const UpdateProfileUseCase = require('../../../application/useCases/updateProfile');
-const UploadAvatarUseCase = require('../../../application/useCases/uploadAvatar');
+const { corsHeaders } = require('../../../core/cors');
+const { sendError } = require('../utils/errorResponse');
+const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
+const UpdateProfileUseCase = require('../../../application/use-cases/user/updateProfile');
+const UploadAvatarUseCase = require('../../../application/use-cases/user/uploadAvatar');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   });
   response.end(JSON.stringify(body));
 }
@@ -39,7 +38,7 @@ function parseJsonBody(request) {
   });
 }
 
-function parseRawBody(request, limitBytes = 3 * 1024 * 1024) {
+function parseRawBody(request, limitBytes = 2 * 1024 * 1024 + 64 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let totalLength = 0;
@@ -130,6 +129,11 @@ function createUserHandler({
   authMiddlewareOptions = {},
 } = {}) {
   return async (request, response) => {
+    // CLEAN-05: CORS theo whitelist (thay cho Access-Control-Allow-Origin: *)
+    for (const [headerName, headerValue] of Object.entries(corsHeaders(request))) {
+      response.setHeader(headerName, headerValue);
+    }
+
     if (request.method === 'OPTIONS') {
       sendJson(response, 204, {});
       return;
@@ -152,9 +156,9 @@ function createUserHandler({
 
       let user;
       try {
-        user = authenticateRequest(request, authMiddlewareOptions);
+        user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
       } catch (err) {
-        sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 401 });
         return;
       }
 
@@ -170,7 +174,7 @@ function createUserHandler({
         const result = await updateProfileUseCase.execute(user.id, payload);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
@@ -184,9 +188,9 @@ function createUserHandler({
 
       let user;
       try {
-        user = authenticateRequest(request, authMiddlewareOptions);
+        user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
       } catch (err) {
-        sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 401 });
         return;
       }
 
@@ -195,7 +199,7 @@ function createUserHandler({
       try {
         rawBuffer = await parseRawBody(request);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
         return;
       }
 
@@ -211,7 +215,7 @@ function createUserHandler({
         const result = await uploadAvatarUseCase.execute(user.id, fileData);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }

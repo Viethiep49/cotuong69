@@ -42,6 +42,7 @@
     STALEMATE: 'STALEMATE',
     TIMEOUT: 'TIMEOUT',
     RESIGN: 'RESIGN',
+    DRAW_PLY_LIMIT: 'DRAW_PLY_LIMIT',
   });
 
   const PVE_END_REASON_LABELS = Object.freeze({
@@ -50,32 +51,120 @@
     STALEMATE: 'Hết nước đi',
     TIMEOUT: 'Hết thời gian',
     RESIGN: 'Đầu hàng',
+    DRAW_PLY_LIMIT: 'Hết giới hạn số nước đi',
   });
 
-  // Bàn cờ tiêu chuẩn ban đầu của Cờ Tướng (90 điểm: 10 hàng x 9 cột)
-  function createInitialXiangqiBoard() {
-    return [
-      ['b_chariot', 'b_horse', 'b_elephant', 'b_advisor', 'b_general', 'b_advisor', 'b_elephant', 'b_horse', 'b_chariot'],
-      [null, null, null, null, null, null, null, null, null],
-      [null, 'b_cannon', null, null, null, null, null, 'b_cannon', null],
-      ['b_soldier', null, 'b_soldier', null, 'b_soldier', null, 'b_soldier', null, 'b_soldier'],
-      [null, null, null, null, null, null, null, null, null],
-      [null, null, null, null, null, null, null, null, null],
-      ['r_soldier', null, 'r_soldier', null, 'r_soldier', null, 'r_soldier', null, 'r_soldier'],
-      [null, 'r_cannon', null, null, null, null, null, 'r_cannon', null],
-      [null, null, null, null, null, null, null, null, null],
-      ['r_chariot', 'r_horse', 'r_elephant', 'r_advisor', 'r_general', 'r_advisor', 'r_elephant', 'r_horse', 'r_chariot'],
-    ];
+  /**
+   * FE-10: URL gốc API PvE. Dùng VITE_API_URL (envBootstrap gán vào window.VITE_API_URL) nếu có,
+   * ngược lại đường dẫn tương đối '/api/pve' (dev đi qua proxy của Vite).
+   */
+  function resolvePveBaseUrl() {
+    const apiBase = typeof window !== 'undefined' && window.VITE_API_URL
+      ? String(window.VITE_API_URL).replace(/\/+$/, '')
+      : null;
+    return apiBase ? `${apiBase}/pve` : '/api/pve';
   }
 
+  /** Access token hiện tại (cùng kho với phần đăng nhập); không có thì null. */
+  function defaultGetToken() {
+    try {
+      if (typeof window !== 'undefined' && typeof window.TokenStorageService === 'function') {
+        return new window.TokenStorageService().getAccessToken();
+      }
+    } catch (e) {
+      /* kho token không dùng được -> coi như chưa đăng nhập */
+    }
+    return null;
+  }
+
+  function cloneJson(value) {
+    return value === undefined || value === null ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  /**
+   * FE-10: client của API PvE thật (backend /api/pve/*). Trạng thái trận, nước đi của máy, kết quả
+   * đều do máy chủ quyết định — lớp này KHÔNG tự bịa trận, nước đi hay kết quả.
+   *
+   * Dùng MỘT instance dùng chung cho tạo trận, đi quân, xin thua (trước đây tạo trận trên instance
+   * tạm còn xin thua trên instance khác nên luôn lỗi MATCH_NOT_FOUND rồi bịa kết quả LOSS).
+   */
   class PveApiService {
+    /**
+     * @param {{ baseUrl?: string, fetch?: Function, getToken?: () => (string|null) }} [options]
+     */
     constructor(options = {}) {
-      this.baseUrl = options.baseUrl || 'http://localhost:5000/api/pve';
+      this.baseUrl = String(options.baseUrl || resolvePveBaseUrl()).replace(/\/+$/, '');
+      this.fetchImpl = options.fetch || null;
+      this.getToken = options.getToken || defaultGetToken;
       this.isCreating = false;
       this.currentMatch = null;
       this.subscribers = [];
-      this.inMemoryMatches = new Map();
-      this.nextMatchId = 1001;
+    }
+
+    /**
+     * Gọi API; mọi lỗi đều là Error có `.code` (mã của backend hoặc NETWORK_ERROR / INVALID_RESPONSE)
+     * và `.status` (mã HTTP, 0 nếu không tới được máy chủ).
+     */
+    async request(method, path, body) {
+      const doFetch = this.fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
+      if (!doFetch) {
+        const err = new Error('Trình duyệt không hỗ trợ gọi máy chủ.');
+        err.code = 'NETWORK_ERROR';
+        err.status = 0;
+        throw err;
+      }
+
+      const headers = { Accept: 'application/json' };
+      const token = this.getToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+      let response;
+      try {
+        response = await doFetch(`${this.baseUrl}${path}`, {
+          method,
+          headers,
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+      } catch (cause) {
+        const err = new Error('Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại.');
+        err.code = 'NETWORK_ERROR';
+        err.status = 0;
+        throw err;
+      }
+
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (e) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const err = new Error((data && (data.error || data.message)) || `Máy chủ trả lỗi ${response.status}.`);
+        err.code = (data && data.code) || (response.status === 401 ? 'UNAUTHORIZED' : 'HTTP_ERROR');
+        err.status = response.status;
+        if (response.status === 401) {
+          err.message = 'Bạn cần đăng nhập để chơi với máy.';
+        }
+        throw err;
+      }
+      if (!data || typeof data !== 'object' || !data.match) {
+        const err = new Error('Phản hồi từ máy chủ không hợp lệ.');
+        err.code = 'INVALID_RESPONSE';
+        err.status = response.status;
+        throw err;
+      }
+      return data;
+    }
+
+    /** Lưu trận mới nhất do máy chủ trả về và phát sự kiện tương ứng. */
+    adopt(match, eventType) {
+      this.currentMatch = cloneJson(match);
+      this.notify(eventType, cloneJson(match));
+      if (match.status === 'FINISHED' && eventType !== 'MATCH_FINISHED') {
+        this.notify('MATCH_FINISHED', cloneJson(match));
+      }
     }
 
     /**
@@ -83,7 +172,8 @@
      * - Chỉ nhận playerColor: 'red' hoặc 'black'
      * - TUYỆT ĐỐI không nhận độ khó (difficulty)
      * - Khóa nút để tránh tạo nhiều trận do bấm liên tục
-     * - Chờ máy chủ tạo Match và trả về kết quả chính thức
+     * - Chờ máy chủ tạo Match và trả về kết quả chính thức. Người chơi cầm Đen thì máy chủ đã
+     *   cho máy đi nước đầu và trả kèm `botMove`.
      */
     async createPveMatch({ playerColor } = {}) {
       if (this.isCreating) {
@@ -100,198 +190,64 @@
       }
 
       this.isCreating = true;
-
       try {
-        await new Promise((resolve) => setTimeout(resolve, 60));
-
-        const botColor = playerColor === PVE_COLORS.RED ? PVE_COLORS.BLACK : PVE_COLORS.RED;
-        const newMatch = {
-          id: `pve-${this.nextMatchId++}`,
-          playerColor,
-          botColor,
-          sideToMove: PVE_COLORS.RED, // Đỏ luôn đi trước
-          status: 'PLAYING',
-          result: null,
-          endReason: null,
-          ply: 0,
-          board: createInitialXiangqiBoard(),
-          capturedPieces: { red: [], black: [] },
-          lastMove: null,
-          createdAt: new Date().toISOString(),
-          // COT-640 Ràng buộc Elo: Tuyệt đối không thay đổi hay tính điểm Elo
-          hasEloRating: false,
-        };
-
-        this.inMemoryMatches.set(newMatch.id, newMatch);
-        this.currentMatch = JSON.parse(JSON.stringify(newMatch));
-        this.notify('MATCH_CREATED', this.currentMatch);
-
-        return {
-          success: true,
-          match: JSON.parse(JSON.stringify(newMatch)),
-        };
+        const data = await this.request('POST', '/matches', { playerColor });
+        this.adopt(data.match, 'MATCH_CREATED');
+        return { success: true, match: cloneJson(data.match), botMove: cloneJson(data.botMove) || null };
       } finally {
         this.isCreating = false;
       }
     }
 
     /**
-     * COT-639: Gửi nước đi của người chơi
+     * COT-639: Gửi nước đi của người chơi. Máy chủ kiểm tra luật, lưu nước, CHO MÁY ĐI NGAY và trả về
+     * cả hai nước + trạng thái trận mới (giao diện không tự tính nước máy).
+     * @param {string|number} matchId
+     * @param {{ from: {row:number,col:number}, to: {row:number,col:number} }} move
      */
-    async submitMove(matchId, { from, to }) {
-      const match = this.inMemoryMatches.get(matchId);
-      if (!match) {
-        const err = new Error('Không tìm thấy trận đấu.');
-        err.code = 'MATCH_NOT_FOUND';
-        throw err;
-      }
-
-      if (match.status !== 'PLAYING') {
-        const err = new Error('Trận đấu đã kết thúc.');
-        err.code = 'MATCH_FINISHED';
-        throw err;
-      }
-
-      if (match.sideToMove !== match.playerColor) {
-        const err = new Error('Chưa tới lượt của bạn! Máy đang đi...');
-        err.code = 'NOT_YOUR_TURN';
-        throw err;
-      }
-
+    async submitMove(matchId, { from, to } = {}) {
       if (!from || !to) {
         const err = new Error('Nước đi không hợp lệ.');
         err.code = 'INVALID_MOVE';
         throw err;
       }
-
-      // Giả lập cập nhật nước đi từ máy chủ
-      match.ply += 1;
-      match.lastMove = { from, to, side: match.playerColor };
-      match.sideToMove = match.botColor; // Đổi lượt cho máy
-      this.currentMatch = JSON.parse(JSON.stringify(match));
-      this.notify('PLAYER_MOVED', this.currentMatch);
-
+      const data = await this.request('POST', `/matches/${encodeURIComponent(matchId)}/moves`, { from, to });
+      this.currentMatch = cloneJson(data.match);
+      this.notify('PLAYER_MOVED', cloneJson(data.match));
+      if (data.botMove) this.notify('BOT_MOVED', cloneJson(data.match));
+      if (data.match.status === 'FINISHED') this.notify('MATCH_FINISHED', cloneJson(data.match));
       return {
         success: true,
-        match: JSON.parse(JSON.stringify(match)),
+        match: cloneJson(data.match),
+        playerMove: cloneJson(data.playerMove) || null,
+        botMove: cloneJson(data.botMove) || null,
       };
     }
 
     /**
-     * COT-639: Nhận nước đi của máy từ máy chủ
-     * UI không tự tính nước đi cho máy!
+     * Đọc trạng thái trận từ máy chủ (kể cả khi trận đã tự kết thúc do hết giờ).
      */
-    async fetchBotMove(matchId) {
-      const match = this.inMemoryMatches.get(matchId);
-      if (!match) {
-        const err = new Error('Không tìm thấy trận đấu.');
-        err.code = 'MATCH_NOT_FOUND';
-        throw err;
-      }
-
-      if (match.status !== 'PLAYING') {
-        const err = new Error('Trận đấu đã kết thúc.');
-        err.code = 'MATCH_FINISHED';
-        throw err;
-      }
-
-      if (match.sideToMove !== match.botColor) {
-        const err = new Error('Chưa tới lượt của máy.');
-        err.code = 'NOT_BOT_TURN';
-        throw err;
-      }
-
-      // Giả lập thời gian máy chủ tính toán
-      await new Promise((resolve) => setTimeout(resolve, 80));
-
-      match.ply += 1;
-      const sampleBotMove = match.botColor === PVE_COLORS.RED
-        ? { from: 'c9', to: 'c8', captured: null }
-        : { from: 'b2', to: 'e2', captured: null };
-
-      match.lastMove = { ...sampleBotMove, side: match.botColor };
-      match.sideToMove = match.playerColor; // Đổi lượt lại cho người chơi
-      this.currentMatch = JSON.parse(JSON.stringify(match));
-      this.notify('BOT_MOVED', this.currentMatch);
-
-      return {
-        success: true,
-        match: JSON.parse(JSON.stringify(match)),
-        move: sampleBotMove,
-      };
+    async getMatch(matchId) {
+      const data = await this.request('GET', `/matches/${encodeURIComponent(matchId)}`);
+      this.adopt(data.match, 'MATCH_REFRESHED');
+      return { success: true, match: cloneJson(data.match) };
     }
 
     /**
      * COT-640: Người chơi đầu hàng trận PvE
-     * Tiêu chí: Người chơi có thể chọn Đầu hàng trong lúc trận đang diễn ra.
-     * Cập nhật kết quả: THUA (LOSS), Lý do: ĐẦU HÀNG (RESIGN).
+     * Kết quả (THUA / ĐẦU HÀNG) do máy chủ chốt và trả về; lỗi thì ném ra, không bịa kết quả.
      */
     async resignMatch(matchId) {
-      const match = this.inMemoryMatches.get(matchId);
-      if (!match) {
-        const err = new Error('Không tìm thấy trận đấu.');
-        err.code = 'MATCH_NOT_FOUND';
-        throw err;
-      }
-
-      if (match.status !== 'PLAYING') {
-        const err = new Error('Trận đấu đã kết thúc.');
-        err.code = 'MATCH_FINISHED';
-        throw err;
-      }
-
-      match.status = 'FINISHED';
-      match.result = PVE_RESULTS.LOSS; // Người chơi đầu hàng -> Kết quả THUA
-      match.endReason = PVE_END_REASONS.RESIGN;
-      match.hasEloRating = false; // Ràng buộc: Tuyệt đối không thay đổi Elo
-      this.currentMatch = JSON.parse(JSON.stringify(match));
-      this.notify('MATCH_FINISHED', this.currentMatch);
-
-      return {
-        success: true,
-        match: JSON.parse(JSON.stringify(match)),
-      };
-    }
-
-    /**
-     * COT-640: Kết thúc ván đấu từ máy chủ với kết quả (WIN / LOSS / DRAW) và lý do
-     */
-    async finishMatch(matchId, { result, endReason } = {}) {
-      const match = this.inMemoryMatches.get(matchId);
-      if (!match) {
-        const err = new Error('Không tìm thấy trận đấu.');
-        err.code = 'MATCH_NOT_FOUND';
-        throw err;
-      }
-
-      if (match.status !== 'PLAYING') {
-        const err = new Error('Trận đấu đã kết thúc.');
-        err.code = 'MATCH_FINISHED';
-        throw err;
-      }
-
-      const validResult = Object.values(PVE_RESULTS).includes(result) ? result : PVE_RESULTS.LOSS;
-      const validEndReason = Object.values(PVE_END_REASONS).includes(endReason) ? endReason : PVE_END_REASONS.CHECKMATE;
-
-      match.status = 'FINISHED';
-      match.result = validResult;
-      match.endReason = validEndReason;
-      match.hasEloRating = false;
-
-      this.currentMatch = JSON.parse(JSON.stringify(match));
-      this.notify('MATCH_FINISHED', this.currentMatch);
-
-      return {
-        success: true,
-        match: JSON.parse(JSON.stringify(match)),
-      };
+      const data = await this.request('POST', `/matches/${encodeURIComponent(matchId)}/resign`);
+      this.adopt(data.match, 'MATCH_FINISHED');
+      return { success: true, match: cloneJson(data.match) };
     }
 
     /**
      * Lấy trận PvE hiện tại
      */
     getCurrentMatch() {
-      return this.currentMatch ? JSON.parse(JSON.stringify(this.currentMatch)) : null;
+      return this.currentMatch ? cloneJson(this.currentMatch) : null;
     }
 
     /**
@@ -339,16 +295,20 @@
     async startMatch({ playerColor }) {
       this.isResignModalOpenState = false;
       this.isResultModalOpenState = false;
-      const res = await this.api.createPveMatch({ playerColor });
-      if (res.success) {
-        this.match = res.match;
-        this.emitChange();
-        // Nếu bot là bên Đỏ (đi trước) -> Kích hoạt lượt bot ngay
-        if (this.match.playerColor === PVE_COLORS.BLACK && this.match.sideToMove === PVE_COLORS.RED) {
-          await this.triggerBotTurn();
+      // Người chơi cầm Đen -> máy (Đỏ) đi trước: máy chủ đi nước đầu ngay khi tạo trận,
+      // trong lúc chờ phản hồi giao diện hiển thị "Máy đang đi..."
+      this.isBotThinkingState = playerColor === PVE_COLORS.BLACK;
+      this.emitChange();
+      try {
+        const res = await this.api.createPveMatch({ playerColor });
+        if (res.success) {
+          this.match = res.match;
         }
+        return res;
+      } finally {
+        this.isBotThinkingState = false;
+        this.emitChange();
       }
-      return res;
     }
 
     async makePlayerMove({ from, to }) {
@@ -358,36 +318,38 @@
         throw err;
       }
       this.movePendingState = true;
+      this.isBotThinkingState = true; // máy chủ đang kiểm tra nước đi và tính nước đáp của máy
       this.emitChange();
       try {
         const res = await this.api.submitMove(this.match.id, { from, to });
         if (res.success) {
+          // Chỉ cập nhật bàn cờ sau khi máy chủ xác nhận (gồm cả nước đi của máy)
           this.match = res.match;
-          this.emitChange();
-          if (this.match.status === 'PLAYING' && this.match.sideToMove === this.match.botColor) {
-            await this.triggerBotTurn();
-          }
         }
         return res;
+      } catch (err) {
+        // Trận đã bị máy chủ kết thúc (vd. hết giờ) hoặc trạng thái lệch -> đồng bộ lại từ máy chủ
+        if (err && (err.code === 'MATCH_FINISHED' || err.code === 'MOVE_CONFLICT' || err.code === 'NOT_YOUR_TURN')) {
+          await this.refreshMatch().catch(() => {});
+        }
+        throw err;
       } finally {
         this.movePendingState = false;
+        this.isBotThinkingState = false;
         this.emitChange();
       }
     }
 
-    async triggerBotTurn() {
-      this.isBotThinkingState = true;
-      this.emitChange();
-      try {
-        const res = await this.api.fetchBotMove(this.match.id);
-        if (res.success) {
-          this.match = res.match;
-        }
-        return res;
-      } finally {
-        this.isBotThinkingState = false;
+    /** Đồng bộ lại trận từ máy chủ (vd. sau khi hết giờ). */
+    async refreshMatch() {
+      if (!this.match) return null;
+      const res = await this.api.getMatch(this.match.id);
+      if (res.success) {
+        this.match = res.match;
+        if (this.match.status === 'FINISHED') this.isResultModalOpenState = true;
         this.emitChange();
       }
+      return res;
     }
 
     // Mở hộp xác nhận đầu hàng
@@ -527,6 +489,6 @@
     PVE_RESULT_LABELS,
     PVE_END_REASONS,
     PVE_END_REASON_LABELS,
-    createInitialXiangqiBoard,
+    resolvePveBaseUrl,
   };
 });

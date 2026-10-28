@@ -1,3 +1,4 @@
+require('./helpers/testEnv.js');
 /**
  * Unit & Integration Test cho COT-570: Schema CSDL & Connection Pool
  * Sử dụng node:test và node:assert tích hợp sẵn trong Node.js (không cần phụ thuộc ngoài)

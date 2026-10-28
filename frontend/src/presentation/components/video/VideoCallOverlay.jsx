@@ -11,6 +11,8 @@ export default function VideoCallOverlay({
   isCamOff = false,
   isRemoteCamOff = false,
   isSpectator = false,
+  error = null,
+  notice = null,
   userName = 'Bạn',
   opponentName = 'Đối thủ',
   onStartCall = () => {},
@@ -21,12 +23,29 @@ export default function VideoCallOverlay({
   onToggleCam = () => {},
 }) {
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream && !isRemoteCamOff) {
       remoteVideoRef.current.srcObject = remoteStream;
     }
   }, [remoteStream, isRemoteCamOff]);
+
+  // FE-07: âm thanh đối phương chạy qua thẻ <audio> riêng, không phụ thuộc thẻ <video>
+  // (trước đây tắt cam/unmount <video> là mất luôn tiếng).
+  useEffect(() => {
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream || null;
+    }
+  }, [remoteStream, callStatus]);
+
+  // Thông báo lỗi/ghi chú hiển thị ở mọi trạng thái (trước đây lỗi không bao giờ hiện ra UI)
+  const alerts = (error || notice) ? (
+    <div className="video-call-alerts">
+      {error && <div className="video-call-error" role="alert">{error}</div>}
+      {notice && <div className="video-call-notice" role="status">{notice}</div>}
+    </div>
+  ) : null;
 
   // TIÊU CHÍ BẮT BUỘC: Khán giả hoàn toàn KHÔNG THẤY và KHÔNG THAM GIA vào cuộc gọi Video
   if (isSpectator) {
@@ -37,6 +56,7 @@ export default function VideoCallOverlay({
   if (callStatus === 'IDLE') {
     return (
       <div className="video-call-launcher" aria-label="Khởi tạo cuộc gọi Video">
+        {alerts}
         <button
           type="button"
           className="btn-call-start"
@@ -61,6 +81,7 @@ export default function VideoCallOverlay({
           </div>
           <h3>Đang gọi cho {opponentName}…</h3>
           <p>Chờ đối thủ phản hồi yêu cầu cuộc gọi (tối đa 60s)</p>
+          {alerts}
           <button
             type="button"
             className="btn-call-cancel"
@@ -84,6 +105,7 @@ export default function VideoCallOverlay({
             <span>{incomingCall.callerName || opponentName} muốn gọi video với bạn</span>
           </div>
         </div>
+        {alerts}
         <div className="incoming-actions">
           <button
             type="button"
@@ -108,6 +130,8 @@ export default function VideoCallOverlay({
   if (callStatus === 'CONNECTED') {
     return (
       <section className="video-call-container" aria-label="Khung cuộc gọi Video Call">
+        {alerts}
+        <audio ref={remoteAudioRef} autoPlay />
         {/* Khung phát luồng Remote Video của đối thủ */}
         <div className="remote-video-frame">
           {remoteStream && !isRemoteCamOff ? (
@@ -115,6 +139,7 @@ export default function VideoCallOverlay({
               ref={remoteVideoRef}
               autoPlay
               playsInline
+              muted
               className="remote-video-element"
               aria-label={`Luồng video của ${opponentName}`}
             />

@@ -2,3 +2,7 @@ node_modules/
 .env
 *.log
 *.sqlite
+
+# CLEAN-05: chặn mọi file env, chỉ giữ file mẫu
+.env.*
+!.env.example

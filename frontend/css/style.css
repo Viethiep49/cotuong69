@@ -1900,6 +1900,11 @@ body {
   color: #ef4444;
 }
 
+/* REV2-14: tin chỉ nằm trên máy này (lobby chưa có kênh chat thật) */
+.status-local {
+  color: #94a3b8;
+}
+
 /* Ô nhập tin nhắn */
 .chat-input-area {
   padding: 10px 12px;

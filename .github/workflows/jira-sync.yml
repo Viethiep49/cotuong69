@@ -1,5 +1,11 @@
 name: Jira Sync Automation
 
+# SEC-04: workflow này có secret Jira nên phải chạy với quyền tối thiểu và
+# KHÔNG bao giờ xử lý PR đến từ fork.
+# - `permissions` mặc định rỗng; job chỉ xin `contents: read` để checkout.
+# - Job `pull_request_target` bị chặn khi `head.repo.full_name` khác repo này.
+# - Script chỉ nhận Issue Key có tiền tố `COT-`.
+
 on:
   create:
   push:
@@ -23,23 +29,40 @@ on:
           - '31'
           - '11'
 
+permissions: {}
+
 jobs:
   jira_transition:
+    name: Sync Jira Status
     runs-on: ubuntu-latest
+    # Chỉ nhận PR được mở từ chính repository này (PR nội bộ của maintainer).
+    # PR từ fork không được phép chuyển trạng thái issue Jira.
+    if: github.event_name == 'create' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Checkout Repository (base branch)
+        # v4 (pin theo commit SHA)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 1
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        # v5 (pin theo commit SHA)
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.x'
 
       - name: Sync Jira Status
+        shell: bash
         env:
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL || 'https://cotuong69.atlassian.net' }}
           JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY || 'COT' }}
+          REPOSITORY: ${{ github.repository }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           REF_TYPE: ${{ github.event.ref_type }}
           REF_NAME: ${{ github.head_ref || github.event.pull_request.head.ref || github.ref_name }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -49,4 +72,6 @@ jobs:
           COMMIT_MESSAGES: ${{ toJson(github.event.commits.*.message) }}
           INPUT_ISSUE_KEY: ${{ github.event.inputs.issue_key }}
           INPUT_TRANSITION_ID: ${{ github.event.inputs.transition_id }}
-        run: python3 .github/scripts/jira_sync.py
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/jira_sync.py

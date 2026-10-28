@@ -1,18 +1,35 @@
 const { URL } = require('node:url');
-const { authenticateRequest } = require('../middlewares/authMiddleware');
-const CreateRoomUseCase = require('../../../application/useCases/room/createRoom');
-const GetRoomByCodeUseCase = require('../../../application/useCases/room/getRoomByCode');
-const JoinRoomByLinkUseCase = require('../../../application/useCases/room/joinRoomByLink');
+const { corsHeaders } = require('../../../core/cors');
+const { sendError } = require('../utils/errorResponse');
+const { safeDecode } = require('../../../core/safeDecode');
+const { enforce, getClientIp, roomLookupLimiter } = require('../middlewares/rateLimiter');
+const { authenticateRequest, authenticateRequestWithSession } = require('../middlewares/authMiddleware');
+const CreateRoomUseCase = require('../../../application/use-cases/room/createRoom');
+const GetRoomByCodeUseCase = require('../../../application/use-cases/room/getRoomByCode');
+const JoinRoomByLinkUseCase = require('../../../application/use-cases/room/joinRoomByLink');
 const { roomManager: defaultRoomManager } = require('../../../infrastructure/database/repositories/RoomManager');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
+
+/**
+ * REV-04: chặn dò mã phòng (mọi đường tra cứu: get-by-code, invitation, join).
+ * @returns {boolean} true nếu đã trả 429
+ */
+function rejectIfRoomLookupLimited(request, response) {
+  const limited = enforce(roomLookupLimiter, `room-lookup:${getClientIp(request)}`);
+  if (!limited) return false;
+  response.setHeader?.('Retry-After', String(limited.retryAfterSeconds));
+  sendJson(response, limited.statusCode, {
+    error: limited.message,
+    code: limited.code,
+    retryAfterSeconds: limited.retryAfterSeconds,
+  });
+  return true;
+}
 
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   });
   response.end(JSON.stringify(body));
 }
@@ -47,8 +64,14 @@ function createRoomHandler({
   joinRoomByLinkUseCase = new JoinRoomByLinkUseCase(),
   roomManager = defaultRoomManager,
   authMiddlewareOptions = {},
+  userRepository = new PgUserRepository(),
 } = {}) {
   return async (request, response) => {
+    // REV-08: CORS theo whitelist (trước đây import corsHeaders nhưng không gọi)
+    for (const [headerName, headerValue] of Object.entries(corsHeaders(request))) {
+      response.setHeader(headerName, headerValue);
+    }
+
     if (request.method === 'OPTIONS') {
       sendJson(response, 204, {});
       return;
@@ -76,9 +99,9 @@ function createRoomHandler({
       if (request.method === 'POST') {
         let user;
         try {
-          user = authenticateRequest(request, authMiddlewareOptions);
+          user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
         } catch (err) {
-          sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
+          sendError(response, sendJson, err, { defaultStatus: 401 });
           return;
         }
 
@@ -94,7 +117,7 @@ function createRoomHandler({
           const result = await createRoomUseCase.execute(user.id, body);
           sendJson(response, 201, result);
         } catch (err) {
-          sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+          sendError(response, sendJson, err, { defaultStatus: 400 });
         }
         return;
       }
@@ -106,17 +129,26 @@ function createRoomHandler({
     // 3. Kiểm tra thông tin phòng qua mã / deep link (GET /api/rooms/:code) - COT-589
     const roomCodeMatch = pathname.match(/^\/api\/rooms\/([^/]+)$/);
     if (roomCodeMatch) {
-      const code = decodeURIComponent(roomCodeMatch[1]);
+      const code = safeDecode(roomCodeMatch[1]);
+      if (code === null) {
+        sendJson(response, 400, { error: 'Mã phòng không hợp lệ.', code: 'INVALID_ROOM_CODE' });
+        return;
+      }
       if (request.method !== 'GET') {
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận GET.' });
         return;
       }
 
+      // BE-13 + REV-04: 30 lần tra mã phòng / phút / IP (chống dò mã phòng riêng tư).
+      // REV2-21: chỉ đếm MỘT lần cho mỗi request GET /api/rooms/:code (trước đây enforce hai lần
+      // nên bị 429 từ lần thứ 16 thay vì 31).
+      if (rejectIfRoomLookupLimited(request, response)) return;
+
       try {
         const result = getRoomByCodeUseCase.execute(code);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 404, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 404 });
       }
       return;
     }
@@ -124,11 +156,18 @@ function createRoomHandler({
     // 4. Lấy deep link mời (GET /api/rooms/:code/invitation) - COT-589
     const inviteMatch = pathname.match(/^\/api\/rooms\/([^/]+)\/invitation$/);
     if (inviteMatch) {
-      const code = decodeURIComponent(inviteMatch[1]);
+      const code = safeDecode(inviteMatch[1]);
+      if (code === null) {
+        sendJson(response, 400, { error: 'Mã phòng không hợp lệ.', code: 'INVALID_ROOM_CODE' });
+        return;
+      }
       if (request.method !== 'GET') {
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận GET.' });
         return;
       }
+
+      // REV-04: trước đây /invitation không bị giới hạn -> dò mã phòng vô hạn
+      if (rejectIfRoomLookupLimited(request, response)) return;
 
       try {
         const result = getRoomByCodeUseCase.execute(code);
@@ -141,7 +180,7 @@ function createRoomHandler({
           spectatorCount: result.room.spectatorCount,
         });
       } catch (err) {
-        sendJson(response, err.statusCode || 404, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 404 });
       }
       return;
     }
@@ -149,17 +188,24 @@ function createRoomHandler({
     // 5. Tham gia phòng qua link và phân vai trò Player/Spectator (POST /api/rooms/:code/join) - COT-589
     const joinMatch = pathname.match(/^\/api\/rooms\/([^/]+)\/join$/);
     if (joinMatch) {
-      const code = decodeURIComponent(joinMatch[1]);
+      const code = safeDecode(joinMatch[1]);
+      if (code === null) {
+        sendJson(response, 400, { error: 'Mã phòng không hợp lệ.', code: 'INVALID_ROOM_CODE' });
+        return;
+      }
       if (request.method !== 'POST') {
         sendJson(response, 405, { error: 'Phương thức không được hỗ trợ. Chỉ chấp nhận POST.' });
         return;
       }
 
+      // REV-04: /join cũng phải bị giới hạn như get-by-code
+      if (rejectIfRoomLookupLimited(request, response)) return;
+
       let user;
       try {
-        user = authenticateRequest(request, authMiddlewareOptions);
+        user = await authenticateRequestWithSession(request, { ...authMiddlewareOptions, userRepository });
       } catch (err) {
-        sendJson(response, err.statusCode || 401, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 401 });
         return;
       }
 
@@ -167,7 +213,7 @@ function createRoomHandler({
         const result = await joinRoomByLinkUseCase.execute(user.id, code);
         sendJson(response, 200, result);
       } catch (err) {
-        sendJson(response, err.statusCode || 400, { error: err.message, code: err.code });
+        sendError(response, sendJson, err, { defaultStatus: 400 });
       }
       return;
     }
