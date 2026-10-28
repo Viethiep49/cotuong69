@@ -123,15 +123,5 @@ describe('Nghiệm thu Task COT-639: Code logic tương tác với AI', () => {
       assert.strictEqual(after.ply, 2, 'Ply tăng lên sau khi máy chủ xác nhận cả hai nước');
       assert.strictEqual(after.sideToMove, 'red', 'Đổi lượt lại cho người chơi');
     });
-
-    test('AC 5.1: Giao diện React component PveBotStatusBanner hiển thị đúng vai trò thông báo', () => {
-      const bannerPath = path.join(__dirname, '../src/presentation/components/pve/PveBotStatusBanner.jsx');
-      assert.ok(fs.existsSync(bannerPath), 'Component PveBotStatusBanner.jsx phải tồn tại');
-
-      const code = fs.readFileSync(bannerPath, 'utf-8');
-      assert.ok(code.includes('Máy đang đi...'), 'Hiển thị chính xác thông điệp "Máy đang đi..."');
-      assert.ok(code.includes('isBotThinking'), 'Nhận prop isBotThinking');
-      assert.ok(code.includes('isPlayerTurn'), 'Nhận prop isPlayerTurn');
-    });
   });
 });

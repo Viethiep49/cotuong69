@@ -1,6 +1,6 @@
 /**
  * BE-14 (lobby JS cũ): ô nhập mã phòng chấp nhận 6 chữ số HOẶC 10 ký tự Crockford base32,
- * không phân biệt hoa/thường, tự viết hoa — khớp LobbyNavigation.jsx / src/domain/roomCode.js.
+ * không phân biệt hoa/thường, tự viết hoa — khớp src/domain/roomCode.js.
  */
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
@@ -42,7 +42,7 @@ describe('BE-14: lobby JS cũ nhận mã phòng riêng tư', () => {
     assert.strictEqual(legacy.sanitizeRoomCodeInput('12a34'), '12A34', 'chữ cái không bị xoá');
   });
 
-  test('regex trong rooms.js trùng src/domain/roomCode.js (không lệch với LobbyNavigation)', () => {
+  test('regex trong rooms.js trùng src/domain/roomCode.js (nguồn chuẩn của định dạng mã phòng)', () => {
     assert.strictEqual(legacy.PUBLIC_ROOM_CODE.source, domain.PUBLIC_ROOM_CODE.source);
     assert.strictEqual(legacy.PRIVATE_ROOM_CODE.source, domain.PRIVATE_ROOM_CODE.source);
     for (const sample of ['102938', '7K3M9QX2AB', '7k3m9qx2ab', '12345', 'IIIIIIIIII', ' 7K3M-9QX2AB']) {

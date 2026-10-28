@@ -17,8 +17,6 @@ const SOURCE_FILES = [
   'js/rooms.js',
   'js/pve.js',
   'src/infrastructure/api/matchApi.js',
-  'src/infrastructure/api/authApi.js',
-  'src/infrastructure/api/userApi.js',
 ];
 
 describe('FE-09: URL API tập trung, dùng đường dẫn tương đối', () => {
@@ -30,8 +28,6 @@ describe('FE-09: URL API tập trung, dùng đường dẫn tương đối', () 
   test('API base mặc định là /api', () => {
     assert.ok(read('js/auth.js').includes(": '/api'"), 'js/auth.js chưa mặc định /api');
     assert.ok(read('js/pve.js').includes("'/api/pve'"), 'js/pve.js chưa mặc định /api/pve');
-    assert.ok(read('src/infrastructure/api/authApi.js').includes("|| '/api'"), 'authApi chưa mặc định /api');
-    assert.ok(read('src/infrastructure/api/userApi.js').includes("|| '/api'"), 'userApi chưa mặc định /api');
     assert.ok(read('src/infrastructure/api/matchApi.js').includes("|| '/api'"), 'matchApi chưa mặc định /api');
   });
 

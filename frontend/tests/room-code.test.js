@@ -1,11 +1,9 @@
 /**
  * BE-14: mã phòng riêng tư không đoán được — 10 ký tự base32 (backend)
- * và frontend phải cho phép nhập đúng dạng này.
+ * và frontend phải cho phép nhập đúng dạng này (src/domain/roomCode.js là bản chuẩn, js/rooms.js phản chiếu lại).
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 
 const {
   isValidRoomCode,
@@ -47,15 +45,4 @@ test('BE-14: thông báo lỗi phân biệt mã số và mã riêng tư', () => 
   assert.match(roomCodeError(''), /Vui lòng nhập/);
   assert.match(roomCodeError('123'), /6 chữ số/);
   assert.match(roomCodeError('7K3M9Q'), /10 ký tự/);
-});
-
-test('BE-14: LobbyNavigation không còn ép đúng 6 chữ số', () => {
-  const file = path.join(__dirname, '../src/presentation/components/lobby/LobbyNavigation.jsx');
-  const source = fs.readFileSync(file, 'utf8');
-
-  assert.ok(!/\/\^\\d\{6\}\$\/\.test/.test(source), 'không còn regex ^\\d{6}$ khi submit');
-  assert.ok(!source.includes('maxLength={6}'), 'maxLength phải là 10');
-  assert.ok(source.includes('maxLength={10}'));
-  assert.ok(source.includes('sanitizeRoomCodeInput'), 'ô nhập phải dùng sanitizeRoomCodeInput');
-  assert.ok(!source.includes("replace(/\\D/g, '')"), 'không còn xoá mọi ký tự không phải số');
 });

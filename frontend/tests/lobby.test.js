@@ -124,34 +124,4 @@ describe('Nghiệm thu Task COT-584: Code layout tổng thể Sảnh chờ (Lobb
         'Chuyển về layout 1 cột trên màn hình nhỏ');
     });
   });
-
-  // AC 4: Kiểm tra Clean Architecture React components trong frontend/src/presentation/components/lobby
-  describe('AC 4: Clean Architecture - React Components Sảnh Chờ', () => {
-    const lobbyDir = path.join(__dirname, '../src/presentation/components/lobby');
-
-    test('AC 4.1: Thư mục presentation/components/lobby chứa đầy đủ các component', () => {
-      assert.ok(fs.existsSync(path.join(lobbyDir, 'UserProfileBar.jsx')), 'Có UserProfileBar.jsx');
-      assert.ok(fs.existsSync(path.join(lobbyDir, 'GameModeCard.jsx')), 'Có GameModeCard.jsx');
-      assert.ok(fs.existsSync(path.join(lobbyDir, 'LobbyNavigation.jsx')), 'Có LobbyNavigation.jsx');
-      assert.ok(fs.existsSync(path.join(lobbyDir, 'LobbyLayout.jsx')), 'Có LobbyLayout.jsx');
-      assert.ok(fs.existsSync(path.join(lobbyDir, 'index.js')), 'Có index.js export');
-    });
-
-    test('AC 4.2: UserProfileBar.jsx render đúng tên và Elo mặc định 1000', () => {
-      const code = fs.readFileSync(path.join(lobbyDir, 'UserProfileBar.jsx'), 'utf-8');
-      assert.ok(code.includes('currentUserElo'), 'Chứa id currentUserElo');
-      assert.ok(code.includes('1000'), 'Chứa giá trị mặc định 1000');
-      assert.ok(code.includes('headerLogoutBtn'), 'Chứa nút headerLogoutBtn');
-    });
-
-    test('AC 4.3: LobbyNavigation.jsx render đúng 3 khối Chơi Online, Chơi Với Máy, Bạn Bè', () => {
-      const code = fs.readFileSync(path.join(lobbyDir, 'LobbyNavigation.jsx'), 'utf-8');
-      assert.ok(code.includes('navPlayOnlineCard'), 'Chứa navPlayOnlineCard');
-      assert.ok(code.includes('navPlayAiCard'), 'Chứa navPlayAiCard');
-      assert.ok(code.includes('navFriendsCard'), 'Chứa navFriendsCard');
-      assert.ok(code.includes('Chơi Online'), 'Có nhãn Chơi Online');
-      assert.ok(code.includes('Chơi Với Máy'), 'Có nhãn Chơi Với Máy');
-      assert.ok(code.includes('Danh Sách Bạn Bè'), 'Có nhãn Danh Sách Bạn Bè');
-    });
-  });
 });

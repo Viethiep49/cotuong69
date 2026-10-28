@@ -144,26 +144,6 @@ describe('COT-640: Thao tác Đầu hàng (Xin thua) & Popup Kết quả PvE', (
 
     const resultDetails = controller.getResultDetails();
     assert.equal(resultDetails.hasEloRating, false);
-
-    // Kiểm tra mã nguồn PveResultModal.jsx không có bất kỳ logic cộng/trừ Elo nào
-    const resultModalFile = fs.readFileSync(
-      path.join(__dirname, '../src/presentation/components/pve/PveResultModal.jsx'),
-      'utf8'
-    );
-
-    // Loại bỏ comment trước khi kiểm tra biểu thức toán học elo
-    const codeWithoutComments = resultModalFile
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/\/\/.*/g, '');
-
-    // Tuyệt đối không có biểu thức cộng trừ điểm Elo (vd: +15 Elo, -10 Elo, deltaElo, eloChange)
-    assert.doesNotMatch(codeWithoutComments, /[+-]\s*\d+\s*Elo/i);
-    assert.doesNotMatch(codeWithoutComments, /eloChange/i);
-    assert.doesNotMatch(codeWithoutComments, /ratingChange/i);
-    assert.doesNotMatch(codeWithoutComments, /deltaElo/i);
-
-    // Phải có thông báo rõ ràng trận PvE không tính điểm Elo
-    assert.match(resultModalFile, /không tính điểm xếp hạng Elo/i);
   });
 
   test('AC 5: Tồn tại đầy đủ thành phần DOM trong frontend/index.html', () => {
@@ -184,15 +164,5 @@ describe('COT-640: Thao tác Đầu hàng (Xin thua) & Popup Kết quả PvE', (
     assert.ok(indexHtml.includes('id="pveResultReason"'), 'Có hiển thị lý do kết thúc');
     assert.ok(indexHtml.includes('id="pveResultNewGameBtn"'), 'Có nút chơi ván mới');
     assert.ok(indexHtml.includes('id="pveResultBackToLobbyBtn"'), 'Có nút trở về sảnh');
-  });
-
-  test('AC 6: Tồn tại và export đầy đủ React components trong frontend/src/presentation/components/pve', () => {
-    const indexPath = path.join(__dirname, '../src/presentation/components/pve/index.js');
-    assert.ok(fs.existsSync(indexPath), 'Tồn tại pve/index.js');
-
-    const indexContent = fs.readFileSync(indexPath, 'utf8');
-    assert.ok(indexContent.includes('PveResignModal'), 'Export PveResignModal');
-    assert.ok(indexContent.includes('PveResultModal'), 'Export PveResultModal');
-    assert.ok(indexContent.includes('PveResignButton'), 'Export PveResignButton');
   });
 });

@@ -92,9 +92,6 @@ describe('Nghiệm thu Task COT-638: Dựng giao diện bắt đầu trận đ�
     const indexPath = path.join(__dirname, '../index.html');
     const indexHtml = fs.readFileSync(indexPath, 'utf-8');
 
-    const componentPath = path.join(__dirname, '../src/presentation/components/pve/PveStartModal.jsx');
-    const componentCode = fs.readFileSync(componentPath, 'utf-8');
-
     test('AC 3.1: Modal PvE không chứa bất kỳ input/select/radio chọn cấp độ khó nào', () => {
       const pveModalPart = indexHtml.slice(
         indexHtml.indexOf('id="pveStartModal"'),
@@ -114,15 +111,6 @@ describe('Nghiệm thu Task COT-638: Dựng giao diện bắt đầu trận đ�
       assert.strictEqual(cleanHtml.toLowerCase().includes('easy'), false, 'Không được có lựa chọn Easy');
       assert.strictEqual(cleanHtml.toLowerCase().includes('medium'), false, 'Không được có lựa chọn Medium');
       assert.strictEqual(cleanHtml.toLowerCase().includes('hard'), false, 'Không được có lựa chọn Hard');
-    });
-
-    test('AC 3.2: Component PveStartModal.jsx không render input/select chọn độ khó', () => {
-      // Loại bỏ comment JS trước khi kiểm tra JSX template
-      const cleanCode = componentCode.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
-      assert.strictEqual(/độ\s*khó|difficulty|cấp\s*độ/i.test(cleanCode), false, 'JSX không chứa độ khó');
-      assert.strictEqual(cleanCode.toLowerCase().includes('dễ'), false, 'JSX không có Dễ');
-      assert.strictEqual(cleanCode.toLowerCase().includes('trung bình'), false, 'JSX không có Trung bình');
-      assert.strictEqual(/<select|<input[^>]*name=["'](difficulty|level)["']/i.test(cleanCode), false, 'JSX không có input độ khó');
     });
   });
 
