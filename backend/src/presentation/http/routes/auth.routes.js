@@ -78,6 +78,11 @@ function createAuthHandler({
   authMiddlewareOptions = {},
 } = {}) {
   return async (request, response) => {
+    // REV-08: CORS theo whitelist (trước đây import corsHeaders nhưng không gọi)
+    for (const [headerName, headerValue] of Object.entries(corsHeaders(request))) {
+      response.setHeader(headerName, headerValue);
+    }
+
     if (request.method === 'OPTIONS') {
       sendJson(response, 204, {});
       return;
