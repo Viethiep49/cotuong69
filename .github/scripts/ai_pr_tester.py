@@ -152,11 +152,29 @@ def resolve_pull_request(repo, token, pr_number, head_sha, head_branch, head_rep
             for candidate in data:
                 if head_sha and (candidate.get("head") or {}).get("sha") == head_sha:
                     return candidate, None
-            if data:
-                return data[0], None
-        errors.append(err or "không tìm thấy PR theo head")
+            # REV-18: KHÔNG fallback sang data[0] — nếu không khớp head SHA thì có thể là
+            # PR khác cùng tên nhánh, và người ngoài sẽ điều khiển được job có secret.
+        errors.append(err or "không tìm thấy PR khớp head SHA")
 
     return None, "; ".join(errors) or "không xác định được PR"
+
+
+def is_fork_pr(repo, head_repo, pr=None):
+    """REV-18: PR từ fork nếu repo chứa nhánh head khác repo đích (hoặc fork đã bị xoá).
+
+    Kiểm tra cả biến HEAD_REPO của workflow_run lẫn metadata PR; chỉ cần một nguồn
+    cho thấy khác repo là coi như fork (fail-safe).
+    """
+    base = (repo or "").strip().lower()
+    if head_repo and head_repo.strip().lower() != base:
+        return True
+    if isinstance(pr, dict):
+        pr_head_repo = (pr.get("head") or {}).get("repo")
+        if not pr_head_repo:
+            return True
+        if str(pr_head_repo.get("full_name") or "").lower() != base:
+            return True
+    return False
 
 
 def get_pr_changes(repo, token, pr_number, base_ref):
@@ -430,6 +448,17 @@ def post_github_comment(repo, pr_number, token, body):
     return True
 
 
+def build_fork_failure_comment(pr_number, failed_parts):
+    """REV-18: comment ngắn cho PR từ fork — chỉ tên thành phần cố định, không chứa log/tên tác giả."""
+    names = ", ".join(failed_parts)
+    return (
+        f"### ❌ AI Quality Gate: Kiểm thử tự động thất bại trên PR #{pr_number}\n\n"
+        f"CI báo lỗi ở: **{names}**. Vui lòng xem log của workflow `PR Tests` trong tab Actions "
+        f"và sửa lỗi trước khi merge.\n\n"
+        f"_PR từ fork nên bước chẩn đoán AI và tạo Jira Bug tự động bị tắt._\n"
+    )
+
+
 def comment_or_fail(repo, pr_number, token, body, reason):
     """Fail-closed: không đăng được comment cũng là lỗi của gate."""
     if not post_github_comment(repo, pr_number, token, body):
@@ -503,6 +532,15 @@ def main():
         failed_parts.append("Frontend Build")
     if not failed_parts and conclusion in ("failure", "timed_out"):
         failed_parts.append(f"CI ({conclusion} — chi tiết không có trong artifact)")
+
+    if failed_parts and is_fork_pr(repo, head_repo, pr):
+        # REV-18: PR từ fork — không đọc log, không gọi Gemini, không tạo Jira Bug
+        # (job này có secret Jira/Gemini; nội dung log do người ngoài kiểm soát).
+        print(f"❌ CI thất bại ở: {', '.join(failed_parts)} (PR từ fork)")
+        comment_or_fail(
+            repo, pr_number, token, build_fork_failure_comment(pr_number, failed_parts),
+            "Kiểm thử tự động thất bại (PR từ fork).",
+        )
 
     if failed_parts:
         print(f"❌ CI thất bại ở: {', '.join(failed_parts)}")
