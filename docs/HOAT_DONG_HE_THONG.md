@@ -116,11 +116,10 @@ Một số thao tác dễ bị lạm dụng để dò mật khẩu hoặc dò m�
 
 ### 4.1 Phát hiện mất kết nối
 
-Trình duyệt biết mình mất kết nối theo ba cách:
+Trình duyệt biết mình mất kết nối theo hai cách:
 
-- WebSocket bị đóng, hoặc có lỗi.
+- WebSocket bị đóng, hoặc có lỗi. Trường hợp kết nối "chết im lặng" cũng quy về đây: máy chủ phát hiện qua heartbeat (xem mục 3.2) rồi chủ động đóng socket với mã 4008, và trình duyệt nhận được sự kiện đóng.
 - Trình duyệt phát sự kiện "offline" khi mất mạng hẳn.
-- Không nhận được heartbeat từ máy chủ trong một khoảng thời gian (xem mục 3.2).
 
 ### 4.2 Việc đầu tiên: khoá bàn cờ
 
@@ -230,7 +229,7 @@ Các thông tin này được dọn định kỳ để bộ nhớ không phình 
 - Lời mời trực tiếp quá 60 giây thì hết hạn.
 - Bộ quét ván với máy chạy mỗi 5 giây.
 
-**Mất khi khởi động lại**: toàn bộ những gì trên đây. Người dùng phải đăng nhập lại, phòng và ván PvP đang chơi không còn.
+**Mất khi khởi động lại**: toàn bộ những gì trên đây. Phòng và ván PvP đang chơi không còn, lời mời và bộ đếm rate limit bị xoá. Người dùng **không** phải đăng nhập lại: token JWT do trình duyệt giữ và máy chủ chỉ cần kiểm tra chữ ký cùng dữ liệu trong cơ sở dữ liệu, nên token vẫn dùng được sau khi máy chủ khởi động lại.
 
 ### 6.2 Những gì nằm trong PostgreSQL
 
