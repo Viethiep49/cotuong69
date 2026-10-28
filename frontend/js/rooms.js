@@ -970,7 +970,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (event.room.isPublic && event.room.status !== 'CLOSED') {
           currentRooms.unshift(event.room);
         }
-        showToast(`Trạng thái phòng [${escapeHtml(event.room.code)}] đã được cập nhật: ${escapeHtml(window.ROOM_STATUS[event.room.status]?.label || event.room.status)}`, 'info');
+        // REV-16: showToast đã tự escape -> không escape thêm (tránh hiện `&amp;`)
+        showToast(`Trạng thái phòng [${event.room.code}] đã được cập nhật: ${window.ROOM_STATUS[event.room.status]?.label || event.room.status}`, 'info');
       }
 
       updateBadgeCounts();
@@ -987,6 +988,9 @@ document.addEventListener('DOMContentLoaded', () => {
   async function handleJoinByCodeSubmit(e) {
     e.preventDefault();
     clearInputError();
+
+    // REV-16: bắt buộc đăng nhập mới được vào phòng bằng mã
+    if (!requireLoginToJoin()) return;
 
     const rawCode = roomCodeInput.value.trim();
 
@@ -1088,9 +1092,9 @@ document.addEventListener('DOMContentLoaded', () => {
           <div>
             <div class="room-card-header">
               <span class="room-code-tag">#${escapeHtml(room.code)}</span>
-              <span class="status-badge ${statusMeta.className}">
-                <span>${statusMeta.icon}</span>
-                <span>${statusMeta.label}</span>
+              <span class="status-badge ${escapeHtml(statusMeta.className)}">
+                <span>${escapeHtml(statusMeta.icon)}</span>
+                <span>${escapeHtml(statusMeta.label)}</span>
               </span>
             </div>
 
@@ -1099,17 +1103,17 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="room-host">
               <span>Chủ phòng:</span>
               <strong>${escapeHtml(room.hostName)}</strong>
-              <span class="user-elo">(${room.hostElo} Elo)</span>
+              <span class="user-elo">(${Number(room.hostElo) || 0} Elo)</span>
             </div>
 
             <div class="room-meta-info">
               <div class="meta-item" title="Người chơi trong phòng">
                 <span>👤</span>
-                <span>${room.playerCount}/${room.maxPlayers} Kỳ thủ</span>
+                <span>${Number(room.playerCount) || 0}/${Number(room.maxPlayers) || 0} Kỳ thủ</span>
               </div>
               <div class="meta-item" title="Khán giả đang theo dõi">
                 <span>👁️</span>
-                <span>${room.spectatorCount} Khán giả</span>
+                <span>${Number(room.spectatorCount) || 0} Khán giả</span>
               </div>
               <div class="meta-item" title="Thời gian ván đấu">
                 <span>⏱️</span>
@@ -1138,9 +1142,22 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
+   * REV-16: chặn khách vào phòng; hiện form đăng nhập + thông báo.
+   * @returns {boolean} true nếu đã đăng nhập
+   */
+  function requireLoginToJoin() {
+    if (apiService.getCurrentUser()) return true;
+    openLoginModal();
+    showToast('Vui lòng đăng nhập để vào phòng.', 'warning');
+    return false;
+  }
+
+  /**
    * Tham gia phòng trực tiếp từ nút trên thẻ phòng
    */
   async function directJoinRoom(code) {
+    // REV-16: bắt buộc đăng nhập mới được vào phòng
+    if (!requireLoginToJoin()) return;
     try {
       const response = await apiService.joinRoomByCode(code);
       if (response.success) {
@@ -1349,7 +1366,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="friend-details">
               <span class="friend-name">${escapeHtml(friend.displayName || friend.username)}</span>
               <div class="friend-meta">
-                <span>Elo: <strong>${friend.elo || 1200}</strong></span>
+                <span>Elo: <strong>${Number(friend.elo) || 1200}</strong></span>
                 <span>•</span>
                 <span class="friend-status-text ${isOnline ? 'online' : 'offline'}">
                   ${isOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
@@ -1544,7 +1561,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (response.success) {
         closeCreateRoomModal();
         await loadRooms();
-        showToast(`Tạo phòng cờ "${escapeHtml(response.room.name)}" thành công!`, 'success');
+        showToast(`Tạo phòng cờ "${response.room.name}" thành công!`, 'success');
 
         // Tiêu chí 4: Điều hướng người tạo vào Room với vai trò Chủ phòng
         openRoomModal(response.room, response.role, response.roleMessage);
@@ -2495,14 +2512,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (floatingChatWidget) floatingChatWidget.style.display = 'block';
     if (floatingChatRoomTitle) floatingChatRoomTitle.textContent = `Chat · #${room.code}`;
 
-    const currentUser = (apiService && apiService.getCurrentUser ? apiService.getCurrentUser() : null) || {
-      id: 'usr_sang',
-      name: 'Nguyễn Tấn Sang',
-      avatar: '桑',
+    // REV-16: bỏ user hardcode; chưa đăng nhập thì không có chat
+    const apiUser = apiService && apiService.getCurrentUser ? apiService.getCurrentUser() : null;
+    if (!apiUser) {
+      if (roomChatSection) roomChatSection.style.display = 'none';
+      if (floatingChatWidget) floatingChatWidget.style.display = 'none';
+      return;
+    }
+    const displayName = apiUser.displayName || apiUser.username || 'Kỳ thủ';
+    const currentUser = {
+      id: apiUser.id,
+      name: displayName,
+      avatar: apiUser.avatar || displayName.slice(0, 1),
       role: roleUpper
     };
-
-    currentUser.role = roleUpper;
 
     if (!activeChatService || activeChatService.roomId !== room.code) {
       if (typeof window.ChatService === 'function') {

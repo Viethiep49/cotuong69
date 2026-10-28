@@ -4,7 +4,7 @@ const MAX_CHARACTERS = 255;
 
 export default function ChatBox({
   roomId = 'default-room',
-  currentUser = { id: 'usr_sang', name: 'Nguyễn Tấn Sang', avatar: '桑' },
+  currentUser = { id: 'guest', name: 'Khách', avatar: '客' },
   role = 'HOST',
   readOnly = false,
   onSendMessage = null,

@@ -273,6 +273,13 @@ class RoomApiService {
    * @param {string} roomCode - Mã phòng 6 ký tự số
    */
   async joinRoomByCode(roomCode) {
+    // REV-16: khách chưa đăng nhập không được vào phòng
+    if (!this.getCurrentUser()) {
+      const err = new Error('Yêu cầu đăng nhập để vào phòng.');
+      err.code = 'UNAUTHORIZED';
+      throw err;
+    }
+
     if (!roomCode || typeof roomCode !== 'string') {
       throw new Error('Mã phòng không được để trống.');
     }

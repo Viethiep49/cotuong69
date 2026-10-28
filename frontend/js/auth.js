@@ -1,7 +1,7 @@
 /**
  * Kỳ Đạo Online - Authentication, OAuth & Profile Service (COT-579, COT-580, COT-581, COT-583, COT-585)
  * Cung cấp toàn bộ validation client-side, quản lý lưu trữ Token an toàn,
- * điều khiển phiên đăng nhập/đăng xuất, OAuth Google/Facebook, và cập nhật hồ sơ/Avatar.
+ * điều khiển phiên đăng nhập/đăng xuất, OAuth Google, và cập nhật hồ sơ/Avatar.
  */
 
 const AUTH_ERROR_CODES = {
@@ -200,6 +200,15 @@ function validateAvatarFile(file) {
   return { isValid: true, error: null, value: file };
 }
 
+/**
+ * REV-16: URL gốc của API. Giá trị VITE_API_URL được src/envBootstrap.js (import.meta.env)
+ * gán vào window.VITE_API_URL TRƯỚC khi file này chạy; thiếu thì dùng đường dẫn tương đối.
+ * (Không dùng import.meta trực tiếp ở đây vì file còn được `require` trong test Node/CommonJS.)
+ */
+function resolveApiBaseUrl() {
+  return typeof window !== 'undefined' && window.VITE_API_URL ? window.VITE_API_URL : '/api';
+}
+
 function extractResetToken(input) {
   if (!input) return null;
   const str = String(input).trim();
@@ -211,7 +220,8 @@ function extractResetToken(input) {
     }
   } catch {}
 
-  const match = str.match(/[?&#]token=([^&#\s]+)/);
+  // REV-16: chỉ nhận token từ query `?token=` / `&token=` (bỏ `#token=` để token không nằm trong fragment)
+  const match = str.match(/[?&]token=([^&#\s]+)/);
   if (match && match[1]) {
     return decodeURIComponent(match[1]).trim();
   }
@@ -348,7 +358,7 @@ class TokenStorageService {
  */
 class AuthService {
   constructor(options = {}) {
-    this.baseUrl = options.baseUrl || (typeof window !== 'undefined' && window.VITE_API_URL ? window.VITE_API_URL : '/api');
+    this.baseUrl = options.baseUrl || resolveApiBaseUrl();
     this.tokenStorage = options.tokenStorage || new TokenStorageService();
     this.fetchImpl = options.fetchImpl !== undefined
       ? options.fetchImpl
@@ -499,11 +509,11 @@ class AuthService {
   }
 
   /**
-   * COT-580 AC 2 & 3: Đăng nhập nhanh OAuth (Google / Facebook)
+   * COT-580 AC 2 & 3: Đăng nhập nhanh OAuth (chỉ Google; Facebook đã bỏ ở SEC-05)
    */
   async loginWithOAuth(provider, { credential, accessToken } = {}) {
     const normProvider = String(provider).toLowerCase();
-    if (!['google', 'facebook'].includes(normProvider)) {
+    if (normProvider !== 'google') {
       return {
         success: false,
         error: 'Nhà cung cấp OAuth không được hỗ trợ.',
@@ -514,34 +524,23 @@ class AuthService {
     if (!credential && !accessToken) {
       return {
         success: false,
-        error: 'Bạn đã hủy quá trình đăng nhập qua ' + (normProvider === 'google' ? 'Google' : 'Facebook') + '.',
+        error: 'Bạn đã hủy quá trình đăng nhập qua Google.',
         code: AUTH_ERROR_CODES.POPUP_CLOSED_BY_USER
       };
     }
 
+    // REV-16: không có fetch thì báo lỗi, KHÔNG tự tạo session giả
     if (!this.fetchImpl) {
-      const mockToken = `mock_oauth_${normProvider}_jwt_${Date.now()}`;
-      const mockUser = {
-        id: `oauth-${normProvider}-${Date.now()}`,
-        username: `${normProvider}_user`,
-        displayName: normProvider === 'google' ? 'Kỳ Thủ Google' : 'Kỳ Thủ Facebook',
-        elo: 1000,
-        avatar: normProvider === 'google' ? 'G' : 'F'
-      };
-      this.tokenStorage.saveTokens({ accessToken: mockToken, user: mockUser });
-      if (this.onAuthStateChanged) this.onAuthStateChanged(mockUser);
       return {
-        success: true,
-        token: mockToken,
-        user: mockUser
+        success: false,
+        error: 'Không thể kết nối máy chủ. Vui lòng kiểm tra kết nối mạng.',
+        code: AUTH_ERROR_CODES.NETWORK_ERROR
       };
     }
 
     try {
       const endpoint = `${this.baseUrl}/auth/${normProvider}`;
-      const payload = normProvider === 'google'
-        ? { credential: credential || accessToken }
-        : { accessToken: accessToken || credential };
+      const payload = { credential: credential || accessToken };
 
       const response = await this.fetchImpl(endpoint, {
         method: 'POST',
@@ -563,9 +562,9 @@ class AuthService {
       const user = data.user || {
         id: data.userId || `oauth-${normProvider}`,
         username: data.username || `${normProvider}_player`,
-        displayName: data.displayName || (normProvider === 'google' ? 'Kỳ Thủ Google' : 'Kỳ Thủ Facebook'),
+        displayName: data.displayName || 'Kỳ Thủ Google',
         elo: data.elo || data.eloRating || 1000,
-        avatar: data.avatarUrl || (normProvider === 'google' ? 'G' : 'F')
+        avatar: data.avatarUrl || 'G'
       };
 
       this.tokenStorage.saveTokens({ accessToken: token, refreshToken: data.refreshToken, user });
@@ -575,7 +574,7 @@ class AuthService {
         success: true,
         token,
         user,
-        message: `Đăng nhập bằng ${normProvider === 'google' ? 'Google' : 'Facebook'} thành công!`
+        message: 'Đăng nhập bằng Google thành công!'
       };
     } catch (err) {
       return {
@@ -691,7 +690,7 @@ class AuthService {
  */
 class UserProfileService {
   constructor(options = {}) {
-    this.baseUrl = options.baseUrl || (typeof window !== 'undefined' && window.VITE_API_URL ? window.VITE_API_URL : '/api');
+    this.baseUrl = options.baseUrl || resolveApiBaseUrl();
     this.tokenStorage = options.tokenStorage || new TokenStorageService();
     this.fetchImpl = options.fetchImpl !== undefined
       ? options.fetchImpl
@@ -866,7 +865,7 @@ class UserProfileService {
  */
 class PasswordResetService {
   constructor(options = {}) {
-    this.baseUrl = options.baseUrl || (typeof window !== 'undefined' && window.VITE_API_URL ? window.VITE_API_URL : '/api');
+    this.baseUrl = options.baseUrl || resolveApiBaseUrl();
     this.fetchImpl = options.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
   }
 

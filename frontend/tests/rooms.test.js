@@ -93,7 +93,8 @@ describe('Nghiệm thu Task COT-597: Giao diện Danh sách phòng và Tìm ki�
 
   // AC 3: Nhập đúng mã 6 số tham gia phòng thành công
   test('AC 3.1: Nhập đúng mã 6 số tham gia phòng thành công với vai trò PLAYER khi còn ghế', async () => {
-    const api = new RoomApiService();
+    // REV-16: vào phòng yêu cầu đăng nhập
+    const api = loginAs(new RoomApiService());
     const result = await api.joinRoomByCode('102938');
 
     assert.strictEqual(result.success, true);
@@ -102,7 +103,8 @@ describe('Nghiệm thu Task COT-597: Giao diện Danh sách phòng và Tìm ki�
   });
 
   test('AC 3.2: Nhập đúng mã 6 số tham gia phòng thành công với vai trò SPECTATOR khi phòng đã đủ 2 người', async () => {
-    const api = new RoomApiService();
+    // REV-16: vào phòng yêu cầu đăng nhập
+    const api = loginAs(new RoomApiService());
     const result = await api.joinRoomByCode('654321');
 
     assert.strictEqual(result.success, true);
@@ -112,7 +114,8 @@ describe('Nghiệm thu Task COT-597: Giao diện Danh sách phòng và Tìm ki�
 
   // AC 4: Hiển thị lỗi rõ ràng khi mã trống, sai định dạng, phòng không tồn tại hoặc đã đóng
   test('AC 4.1: Chặn và báo lỗi khi mã phòng để trống', async () => {
-    const api = new RoomApiService();
+    // REV-16: vào phòng yêu cầu đăng nhập
+    const api = loginAs(new RoomApiService());
 
     await assert.rejects(
       async () => { await api.joinRoomByCode(''); },
@@ -121,7 +124,8 @@ describe('Nghiệm thu Task COT-597: Giao diện Danh sách phòng và Tìm ki�
   });
 
   test('AC 4.2: Chặn và báo lỗi khi mã phòng sai định dạng (không đủ 6 số hoặc chứa chữ cái)', async () => {
-    const api = new RoomApiService();
+    // REV-16: vào phòng yêu cầu đăng nhập
+    const api = loginAs(new RoomApiService());
 
     // Dưới 6 số
     await assert.rejects(
@@ -143,7 +147,8 @@ describe('Nghiệm thu Task COT-597: Giao diện Danh sách phòng và Tìm ki�
   });
 
   test('AC 4.3: Báo lỗi rõ ràng khi phòng không tồn tại trên hệ thống', async () => {
-    const api = new RoomApiService();
+    // REV-16: vào phòng yêu cầu đăng nhập
+    const api = loginAs(new RoomApiService());
 
     await assert.rejects(
       async () => { await api.joinRoomByCode('999999'); },
@@ -152,7 +157,8 @@ describe('Nghiệm thu Task COT-597: Giao diện Danh sách phòng và Tìm ki�
   });
 
   test('AC 4.4: Báo lỗi rõ ràng khi phòng đã đóng hoặc bị hủy', async () => {
-    const api = new RoomApiService();
+    // REV-16: vào phòng yêu cầu đăng nhập
+    const api = loginAs(new RoomApiService());
     // Đóng phòng 102938
     api.emitRoomStateChange('102938', 'CLOSED');
 

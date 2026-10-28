@@ -55,12 +55,12 @@ describe('FE-04: escape nội suy trong innerHTML', () => {
     assert.ok(!ROOMS_JS.includes('>${msg.timestamp}<'), 'vẫn còn nội suy thô msg.timestamp');
   });
 
-  test('dữ liệu phòng từ server trong toast đã escape', () => {
-    assert.ok(ROOMS_JS.includes('${escapeHtml(event.room.code)}'), 'toast trạng thái phòng chưa escape code');
-    assert.ok(
-      ROOMS_JS.includes('"${escapeHtml(response.room.name)}"'),
-      'toast tạo phòng chưa escape tên phòng',
-    );
+  // REV-16: showToast đã tự escapeHtml(message) -> truyền chuỗi thô, không escape hai lần (tránh `A&amp;B`)
+  test('toast chứa dữ liệu phòng từ server: showToast tự escape, không escape hai lần', () => {
+    assert.ok(/function showToast[\s\S]*?escapeHtml\(message\)/.test(ROOMS_JS), 'showToast phải tự escape message');
+    assert.ok(ROOMS_JS.includes('[${event.room.code}]'), 'toast trạng thái phòng phải truyền code thô cho showToast');
+    assert.ok(ROOMS_JS.includes('"${response.room.name}"'), 'toast tạo phòng phải truyền tên thô cho showToast');
+    assert.ok(!/showToast\([^\n]*escapeHtml\(/.test(ROOMS_JS), 'còn escapeHtml bên trong showToast');
   });
 
   test('avatar header dùng whitelist URL thay vì tin mọi http/data', () => {

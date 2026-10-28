@@ -21,11 +21,12 @@ const MAX_MESSAGE_LENGTH = 255;
 class ChatService {
   constructor(options = {}) {
     this.roomId = options.roomId || 'room-default';
+    // REV-16: không còn user hardcode; mặc định là khách (SPECTATOR -> không được chat)
     this.currentUser = options.currentUser || {
-      id: 'usr_sang',
-      name: 'Nguyễn Tấn Sang',
-      avatar: '桑',
-      role: CHAT_ROLES.HOST
+      id: 'guest',
+      name: 'Khách',
+      avatar: '客',
+      role: CHAT_ROLES.SPECTATOR
     };
     this.messages = [];
     this.listeners = [];
