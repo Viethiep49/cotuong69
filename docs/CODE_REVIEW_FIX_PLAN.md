@@ -550,23 +550,23 @@ Không có `process.on('unhandledRejection'|'uncaughtException')`, không có `w
 Các lỗi do review độc lập lần 3 phát hiện. Mỗi mục = một commit `fix(REV2-xx): ...`, có test tái hiện (fail trước, pass sau).
 
 **Backend**
-- [ ] REV2-01 · [HIGH] Client reset TCP trong lúc WS upgrade làm sập server (socket upgrade chưa có listener `error` khi `await ensureSessionActive`). Gắn `socket.on('error')` trước await đầu tiên, sau await thoát nếu `socket.destroyed`; kiểm tra cả đường upgrade demo trong `server.js`.
-- [ ] REV2-02 · [MEDIUM] Cả hai bên cùng rớt: khi cửa sổ reconnect của bên đầu hết mà bên kia còn trong cửa sổ của mình thì phải chờ (bên kia quay lại -> thắng DISCONNECT_TIMEOUT; hết cửa sổ -> SYSTEM_ERROR), không được SYSTEM_ERROR ngay.
-- [ ] REV2-03 · [MEDIUM] `handleDisconnectTimeout` chỉ gỡ ghế sau `await settleMatch` nên người quay lại trong lúc await bị đuổi dù socket còn. Gỡ ghế (và chuyển chủ phòng) đồng bộ trước khi await, hoặc kiểm tra lại socket sống sau await.
-- [ ] REV2-04 · [MEDIUM] Sau SYSTEM_ERROR cả hai ghế bị giải phóng nhưng `hostId` còn trỏ người đã gỡ và không có UserLeft: phòng có khán giả bị kẹt. Chuyển chủ phòng/đóng phòng và broadcast.
-- [ ] REV2-05 · [LOW-MED] Xin thua (hay mọi settle) khi đối thủ đang rớt mạng để lại ghế ma: `settleMatch` phải giải phóng ghế các bên còn trong `reconnectState.bySide` (+ chuyển chủ phòng).
-- [ ] REV2-06 · [LOW] Dòng hoà / SYSTEM_ERROR trong `pvp_matches` không lưu id người chơi: luôn lưu red/black user id.
-- [ ] REV2-07 · [LOW] Nước đi được nhận sau hạn đồng hồ: trước `applyMove` từ chối khi hết giờ lượt/đồng hồ tổng của người đi và chốt TIMEOUT.
-- [ ] REV2-08 · Khán giả không được chat (roomHub `chat:send` và `demoChatRelay.js` trả `SPECTATOR_CANNOT_CHAT`); gỡ `TODO(FE-05)`.
-- [ ] REV2-09 · Chất lượng test: test REV-01 đi qua hub thật (connection handler / startDisconnectTimer); thêm test cấp hub `start` khi đang chốt trả `MATCH_SETTLING`.
+- [x] REV2-01 · [HIGH] Client reset TCP trong lúc WS upgrade làm sập server (socket upgrade chưa có listener `error` khi `await ensureSessionActive`). Gắn `socket.on('error')` trước await đầu tiên, sau await thoát nếu `socket.destroyed`; kiểm tra cả đường upgrade demo trong `server.js`.
+- [x] REV2-02 · [MEDIUM] Cả hai bên cùng rớt: khi cửa sổ reconnect của bên đầu hết mà bên kia còn trong cửa sổ của mình thì phải chờ (bên kia quay lại -> thắng DISCONNECT_TIMEOUT; hết cửa sổ -> SYSTEM_ERROR), không được SYSTEM_ERROR ngay.
+- [x] REV2-03 · [MEDIUM] `handleDisconnectTimeout` chỉ gỡ ghế sau `await settleMatch` nên người quay lại trong lúc await bị đuổi dù socket còn. Gỡ ghế (và chuyển chủ phòng) đồng bộ trước khi await, hoặc kiểm tra lại socket sống sau await.
+- [x] REV2-04 · [MEDIUM] Sau SYSTEM_ERROR cả hai ghế bị giải phóng nhưng `hostId` còn trỏ người đã gỡ và không có UserLeft: phòng có khán giả bị kẹt. Chuyển chủ phòng/đóng phòng và broadcast.
+- [x] REV2-05 · [LOW-MED] Xin thua (hay mọi settle) khi đối thủ đang rớt mạng để lại ghế ma: `settleMatch` phải giải phóng ghế các bên còn trong `reconnectState.bySide` (+ chuyển chủ phòng).
+- [x] REV2-06 · [LOW] Dòng hoà / SYSTEM_ERROR trong `pvp_matches` không lưu id người chơi: luôn lưu red/black user id.
+- [x] REV2-07 · [LOW] Nước đi được nhận sau hạn đồng hồ: trước `applyMove` từ chối khi hết giờ lượt/đồng hồ tổng của người đi và chốt TIMEOUT.
+- [x] REV2-08 · Khán giả không được chat (roomHub `chat:send` và `demoChatRelay.js` trả `SPECTATOR_CANNOT_CHAT`); gỡ `TODO(FE-05)`.
+- [x] REV2-09 · Chất lượng test: test REV-01 đi qua hub thật (connection handler / startDisconnectTimer); thêm test cấp hub `start` khi đang chốt trả `MATCH_SETTLING`.
 
 **Frontend**
-- [ ] REV2-10 · [MEDIUM] Sau demo auto-reset (REV-19) `useMatch` giữ `serverResult` của ván cũ -> hai bàn bị khoá. Xoá kết quả khi status rời `completed`, chỉ xử lý kết quả khi chuyển vào `completed`.
-- [ ] REV2-11 · [MEDIUM] `reconnectPolicy.js` coi mọi mã 4000-4999 là fatal nhưng hub dùng 4008 cho heartbeat timeout. Chỉ các mã auth thật sự (1008, 4001, 4003...) là fatal; mã khác retry với backoff.
-- [ ] REV2-12 · [LOW] Handler close/error/message của `useMatch` không kiểm tra socket hiện hành; `online` khi socket cũ đang CLOSING mở socket thứ 3 và socket thứ 2 giữ ghế. Bỏ qua sự kiện của socket không phải hiện hành; CLOSING xử lý như CONNECTING.
-- [ ] REV2-13 · [LOW] Trong App thật `call:leave` không được gửi khi unmount vì socket đóng trước dispose của call controller. Sửa thứ tự cleanup, test ở mức App/composition.
-- [ ] REV2-14 · [LOW] Chat phòng ở lobby JS cũ (`js/rooms.js`, `js/chat.js`) vẫn giả "Đã gửi" bằng timer khi không có transport: nối transport thật hoặc hiển thị rõ chỉ-cục-bộ.
-- [ ] REV2-15 · [LOW] Thêm test hành vi cho `useRoomSignaling` với WebSocket giả, và test render jsdom cho XSS của `renderRooms`/chat với dữ liệu độc hại.
+- [x] REV2-10 · [MEDIUM] Sau demo auto-reset (REV-19) `useMatch` giữ `serverResult` của ván cũ -> hai bàn bị khoá. Xoá kết quả khi status rời `completed`, chỉ xử lý kết quả khi chuyển vào `completed`.
+- [x] REV2-11 · [MEDIUM] `reconnectPolicy.js` coi mọi mã 4000-4999 là fatal nhưng hub dùng 4008 cho heartbeat timeout. Chỉ các mã auth thật sự (1008, 4001, 4003...) là fatal; mã khác retry với backoff.
+- [x] REV2-12 · [LOW] Handler close/error/message của `useMatch` không kiểm tra socket hiện hành; `online` khi socket cũ đang CLOSING mở socket thứ 3 và socket thứ 2 giữ ghế. Bỏ qua sự kiện của socket không phải hiện hành; CLOSING xử lý như CONNECTING.
+- [x] REV2-13 · [LOW] Trong App thật `call:leave` không được gửi khi unmount vì socket đóng trước dispose của call controller. Sửa thứ tự cleanup, test ở mức App/composition.
+- [x] REV2-14 · [LOW] Chat phòng ở lobby JS cũ (`js/rooms.js`, `js/chat.js`) vẫn giả "Đã gửi" bằng timer khi không có transport: nối transport thật hoặc hiển thị rõ chỉ-cục-bộ.
+- [x] REV2-15 · [LOW] Thêm test hành vi cho `useRoomSignaling` với WebSocket giả, và test render jsdom cho XSS của `renderRooms`/chat với dữ liệu độc hại.
 
 **Auth / HTTP / DB / CI (bổ sung, làm sau danh sách trên)**
 - [ ] REV2-16 · [HIGH] Rate limit đăng nhập theo IP bị vượt bằng burst song song (`isBlocked` kiểm lúc đến, `record` sau bcrypt). Đếm lần thử ngay lúc đến (hoặc bộ đếm in-flight), chỉ bỏ đếm khi thành công; cùng khe hở ở limiter WS upgrade. Giữ luật REV-04: limiter IP đếm lần thất bại, limiter theo username chỉ làm chậm, không khoá cứng.
@@ -581,7 +581,7 @@ Các lỗi do review độc lập lần 3 phát hiện. Mỗi mục = một comm
 - [ ] REV2-25 · [LOW] `registerUser` / `createUserWithIdentity`: trùng username đồng thời -> vi phạm unique (23505 hoặc tương đương SQLite) trả 500; map sang `USERNAME_EXISTS` 409 (`EMAIL_EXISTS` nếu phân biệt được). Gán status mặc định cho `ROOM_CLOSED`, `USER_NOT_IN_ROOM` trong `errorResponse`; thêm `METHOD_NOT_ALLOWED` vào `ERROR_CODES` và sửa regex test REV-03.
 
 **Tính năng**
-- [ ] PVE-UI · Màn hình chơi PvE trên giao diện (tái dùng `XiangqiBoard`): đi quân, nước máy đáp, đồng hồ, xin thua có xác nhận, modal kết quả (WIN/LOSS/DRAW + lý do tiếng Việt), kết quả không xác định hiển thị trung tính, tải lại tiếp tục trận, phản ánh timeout của server. Test Vitest + RTL với fetch giả.
+- [x] PVE-UI · Màn hình chơi PvE trên giao diện (tái dùng `XiangqiBoard`): đi quân, nước máy đáp, đồng hồ, xin thua có xác nhận, modal kết quả (WIN/LOSS/DRAW + lý do tiếng Việt), kết quả không xác định hiển thị trung tính, tải lại tiếp tục trận, phản ánh timeout của server. Test Vitest + RTL với fetch giả.
 
 ---
 
