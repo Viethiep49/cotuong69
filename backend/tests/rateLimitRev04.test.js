@@ -43,7 +43,8 @@ describe('REV-04: rate limiter', () => {
 
   test('chỉ tin X-Forwarded-For khi TRUST_PROXY=true', () => {
     process.env.TRUST_PROXY = 'true';
-    assert.equal(getClientIp(makeRequest({ 'x-forwarded-for': '1.2.3.4, 10.0.0.1' }, '10.0.0.1')), '1.2.3.4');
+    // REV2-18: proxy tin cậy thêm IP peer vào CUỐI header -> lấy phần tử bên phải, không phải phần tử đầu do client đặt
+    assert.equal(getClientIp(makeRequest({ 'x-forwarded-for': '1.2.3.4' }, '10.0.0.1')), '1.2.3.4');
     // XFF rác -> quay về socket
     assert.equal(getClientIp(makeRequest({ 'x-forwarded-for': '<script>' }, '10.0.0.2')), '10.0.0.2');
   });

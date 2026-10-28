@@ -128,9 +128,20 @@ function normalizeIp(value) {
 }
 
 /**
+ * REV2-18: số reverse proxy TIN CẬY đứng trước app (mặc định 1). Mỗi proxy tin cậy thêm
+ * địa chỉ của peer trước nó vào CUỐI X-Forwarded-For, nên IP thật của client là phần tử thứ
+ * `hops` tính từ bên PHẢI. Phần tử bên trái do client tự đặt -> không được tin.
+ */
+function trustedProxyHops() {
+  const hops = Number.parseInt(process.env.TRUST_PROXY_HOPS || '1', 10);
+  return Number.isInteger(hops) && hops >= 1 && hops <= 10 ? hops : 1;
+}
+
+/**
  * REV-04: chỉ đọc x-forwarded-for khi TRUST_PROXY=true (chạy sau reverse proxy
  * tin cậy). Trước đây luôn tin header này nên đổi XFF mỗi request là không bao
  * giờ bị giới hạn, đồng thời làm Map key phình to.
+ * REV2-18: dùng phần tử bên PHẢI (xem trustedProxyHops) thay vì phần tử đầu tiên do client tự đặt.
  * @param {object} request
  * @returns {string}
  */
@@ -138,10 +149,14 @@ function getClientIp(request) {
   const trustProxy = String(process.env.TRUST_PROXY || '').toLowerCase() === 'true';
   if (trustProxy) {
     const forwarded = request.headers && (request.headers['x-forwarded-for'] || request.headers['X-Forwarded-For']);
-    const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    const raw = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
     if (typeof raw === 'string' && raw.trim()) {
-      const first = normalizeIp(raw.split(',')[0]);
-      if (first) return first;
+      const entries = raw.split(',').map((item) => item.trim()).filter(Boolean);
+      const hops = trustedProxyHops();
+      if (entries.length >= hops) {
+        const candidate = normalizeIp(entries[entries.length - hops]);
+        if (candidate) return candidate;
+      }
     }
   }
   const socket = request.socket || request.connection;
