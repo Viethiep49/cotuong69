@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchMatch, matchWebSocketProtocols, matchWebSocketUrl } from '../../infrastructure/api/matchApi';
 import { ReconnectManager } from '../../domain/network/reconnectManager';
 import { BoardSyncManager } from '../../domain/game/boardSyncManager';
+import { classifyServerMessage } from '../../domain/network/signalingMessages';
+import { useRoomSignaling } from './useRoomSignaling';
 import {
   browserOnlineAction,
   isFatalCloseCode,
@@ -9,6 +11,12 @@ import {
   nextRetryDelay,
   resolveReadOnly,
 } from '../../domain/network/reconnectPolicy';
+
+const SIGNALING_LOST_MESSAGE = {
+  type: 'CallEnded',
+  reason: 'SIGNALING_LOST',
+  message: 'Mất kết nối máy chủ nên cuộc gọi video đã kết thúc.',
+};
 
 function isMatchColor(color) {
   return color === 'red' || color === 'black';
@@ -55,7 +63,12 @@ function withCheckStatus(serverState, message, previousMatch) {
   };
 }
 
-export function useMatch(matchId) {
+/**
+ * @param {string|null} matchId
+ * @param {{roomCode?: string|null}} [options] FE-01: có roomCode -> signaling cuộc gọi đi qua socket
+ *   roomHub (/ws/room/:code); chỉ có matchId (trận demo) -> đi qua chính WS của trận.
+ */
+export function useMatch(matchId, { roomCode = null } = {}) {
   const reconnectManager = useMemo(() => new ReconnectManager({ maxWaitSeconds: 60 }), []);
   const [reconnectState, setReconnectState] = useState(() => reconnectManager.getState());
 
@@ -73,6 +86,14 @@ export function useMatch(matchId) {
   const socketRef = useRef(null);
   const pendingRef = useRef(false);
   const signalingHandlerRef = useRef(null);
+  const deliverSignaling = useCallback((message) => {
+    if (typeof signalingHandlerRef.current === 'function') {
+      signalingHandlerRef.current(message);
+    }
+  }, []);
+  const roomSignaling = useRoomSignaling(roomCode, deliverSignaling);
+  const roomCodeRef = useRef(roomCode);
+  roomCodeRef.current = roomCode;
   // FE-08: sự kiện `online` của trình duyệt gọi hàm này để kết nối lại NGAY (không chờ backoff)
   const reconnectNowRef = useRef(null);
 
@@ -241,17 +262,6 @@ export function useMatch(matchId) {
                 reason: message.reason || message.endReason,
                 message: message.message,
               });
-            } else if (
-              [
-                'CallIncoming', 'CallInitiated', 'CallAccepted',
-                'CallOffer', 'CallAnswer', 'CallCandidate',
-                'CallTimeout', 'CallRejected', 'CallEnded',
-              ].includes(message.type)
-            ) {
-              // COT-629: Chuyển tiếp các gói tin Signaling cho WebRTC Video Call
-              if (typeof signalingHandlerRef.current === 'function') {
-                signalingHandlerRef.current(message);
-              }
             } else if (message.type === 'moveResult') {
               pendingRef.current = false;
               setState((current) => {
@@ -273,8 +283,16 @@ export function useMatch(matchId) {
                   match,
                 };
               });
-            } else if (message.type === 'error') {
-              setState((current) => ({ ...current, moveError: message.error }));
+            } else if (message.type === 'error' || classifyServerMessage(message).kind === 'call') {
+              // FE-01: gói Call* và lỗi của cuộc gọi đi tới CallController (COT-629);
+              // lỗi chung chỉ thành moveError khi đang có nước đi chờ phản hồi.
+              const routed = classifyServerMessage(message, { movePending: pendingRef.current });
+              if (routed.kind === 'call') {
+                deliverSignaling(routed.message);
+              } else if (routed.kind === 'moveError') {
+                pendingRef.current = false;
+                setState((current) => ({ ...current, movePending: false, moveError: routed.error }));
+              }
             }
           } catch (error) {
             setState((current) => ({
@@ -289,6 +307,9 @@ export function useMatch(matchId) {
           pendingRef.current = false;
           // COT-601: Mất kết nối WebSocket -> hiển thị overlay mạng chập chờn
           reconnectManager.handleSelfDisconnect('WS_DISCONNECTED');
+          // FE-01: signaling của cuộc gọi đi qua chính socket này (trận demo) -> mất socket là
+          // mất cuộc gọi phía server; báo cho CallController dọn camera/mic.
+          if (!roomCodeRef.current) deliverSignaling(SIGNALING_LOST_MESSAGE);
           // FE-08: server chủ động từ chối (1008 / 4xxx) thì không thử lại vô hạn
           if (isFatalCloseCode(event && event.code)) {
             setState((current) => ({
@@ -408,12 +429,22 @@ export function useMatch(matchId) {
     return reconnectManager.handleServerMatchResult(result);
   }, [reconnectManager]);
 
+  // FE-01: có roomCode -> gửi qua socket roomHub; không có (trận demo) -> qua WS của trận
+  const sendRoomSignaling = roomSignaling.send;
   const sendSignaling = useCallback((payload) => {
+    if (roomCode) return sendRoomSignaling(payload);
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     socket.send(JSON.stringify(payload));
     return true;
-  }, []);
+  }, [roomCode, sendRoomSignaling]);
+
+  const isRoomSignalingReady = roomSignaling.isReady;
+  const isSignalingReady = useCallback(() => {
+    if (roomCode) return isRoomSignalingReady();
+    const socket = socketRef.current;
+    return Boolean(socket && socket.readyState === WebSocket.OPEN);
+  }, [roomCode, isRoomSignalingReady]);
 
   const setSignalingHandler = useCallback((handler) => {
     signalingHandlerRef.current = handler;
@@ -425,6 +456,8 @@ export function useMatch(matchId) {
     sendMove,
     clearMoveError,
     sendSignaling,
+    isSignalingReady,
+    signalingError: roomCode ? roomSignaling.error : null,
     setSignalingHandler,
     reconnectState,
     reconnectManager,

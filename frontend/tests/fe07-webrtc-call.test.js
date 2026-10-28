@@ -373,7 +373,7 @@ describe('FE-07: giao diện cuộc gọi', () => {
 
   test('lỗi và ghi chú cuộc gọi được hiển thị', () => {
     assert.ok(overlay.includes('role="alert"'));
-    assert.ok(read('src/App.jsx').includes('error={callError}'));
+    assert.ok(/error=\{callError(\s*\|\|[^}]*)?\}/.test(read('src/App.jsx')));
   });
 
   test('hook dùng CallController (không còn logic chạy chồng nhau trong hook)', () => {

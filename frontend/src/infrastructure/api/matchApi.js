@@ -25,6 +25,17 @@ export function matchWebSocketUrl(matchId) {
   return url.toString();
 }
 
+// FE-01: WS roomHub (/ws/room/:code) cho signaling cuộc gọi khi URL có roomCode.
+// Dev đi qua proxy /ws của Vite; nếu VITE_API_URL là domain tuyệt đối thì dùng origin của nó.
+export function roomWebSocketUrl(roomCode) {
+  const origin = /^https?:\/\//i.test(apiBaseUrl)
+    ? new URL(apiBaseUrl).origin
+    : (typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost:3000');
+  const url = new URL(`${origin}/ws/room/${encodeURIComponent(roomCode)}`);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
+}
+
 // FE-06: subprotocol mang token (không đưa token vào query string)
 export function matchWebSocketProtocols() {
   return buildWsProtocols(TokenStorage.getAccessToken());

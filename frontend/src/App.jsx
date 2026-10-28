@@ -4,6 +4,7 @@ import ChatBox from './presentation/components/chat/ChatBox';
 import VideoCallOverlay from './presentation/components/video/VideoCallOverlay';
 import { useMatch } from './application/hooks/useMatch';
 import { useWebRtcCall } from './application/hooks/useWebRtcCall';
+import { parseRoomCodeParam } from './domain/network/roomCodeParam';
 import { BoardSyncManager } from './domain/game/boardSyncManager';
 import { moveSoundPlayer } from './infrastructure/sound/moveSound';
 import './styles.css';
@@ -90,7 +91,10 @@ function CapturedTray({ color, pieces }) {
 }
 
 function App() {
-  const matchId = new URLSearchParams(window.location.search).get('matchId');
+  const searchParams = new URLSearchParams(window.location.search);
+  const matchId = searchParams.get('matchId');
+  // FE-01: có roomCode hợp lệ -> signaling cuộc gọi đi qua roomHub; không có (demo) -> WS của trận
+  const roomCode = parseRoomCodeParam(searchParams.get('roomCode'));
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [perspectiveEnabled, setPerspectiveEnabled] = useState(false);
   const [captureEffect, setCaptureEffect] = useState(null);
@@ -115,8 +119,10 @@ function App() {
     simulateOpponentReconnect,
     simulateServerMatchResult,
     sendSignaling,
+    isSignalingReady,
+    signalingError,
     setSignalingHandler,
-  } = useMatch(matchId);
+  } = useMatch(matchId, { roomCode });
 
   const currentUserName = color === 'red' ? match?.players?.red?.name : color === 'black' ? match?.players?.black?.name : 'Khán Giả';
   const opponentUserName = color === 'red' ? match?.players?.black?.name : color === 'black' ? match?.players?.red?.name : 'Đối thủ';
@@ -140,6 +146,7 @@ function App() {
     handleSignalingMessage,
   } = useWebRtcCall({
     sendSignaling,
+    isSignalingReady,
     isSpectator: readOnly,
     userName: currentUserName || 'Bạn',
     opponentName: opponentUserName || 'Đối thủ',
@@ -507,7 +514,7 @@ function App() {
             isCamOff={isCamOff}
             isRemoteCamOff={isRemoteCamOff}
             isSpectator={readOnly}
-            error={callError}
+            error={callError || signalingError}
             notice={callNotice}
             userName={currentUserName || 'Bạn'}
             opponentName={opponentUserName || 'Đối thủ'}

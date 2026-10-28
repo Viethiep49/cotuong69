@@ -12,6 +12,7 @@ const SOCKET_OPEN = typeof WebSocket !== 'undefined' ? WebSocket.OPEN : 1;
 export function useWebRtcCall({
   socket = null,
   sendSignaling = null,
+  isSignalingReady = null,
   isSpectator = false,
   userName = 'Bạn',
   opponentName = 'Đối thủ',
@@ -37,6 +38,8 @@ export function useWebRtcCall({
       return false;
     },
     isConnected: () => {
+      // FE-01: kênh signaling (WS trận demo hoặc WS roomHub) phải thật sự mở trước khi xin camera/mic
+      if (typeof isSignalingReady === 'function') return Boolean(isSignalingReady());
       if (typeof sendSignaling === 'function') return true;
       const currentSocket = socket?.current || socket;
       return Boolean(currentSocket && currentSocket.readyState === SOCKET_OPEN);

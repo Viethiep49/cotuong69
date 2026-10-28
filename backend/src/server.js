@@ -17,6 +17,7 @@ const { createUserHandler } = require('./presentation/http/routes/user.routes');
 const { createRoomHandler } = require('./presentation/http/routes/room.routes');
 const { createFriendsHandler } = require('./presentation/http/routes/friends.routes');
 const { roomHub: defaultRoomHub, WS_SUBPROTOCOL } = require('./presentation/websocket/roomHub');
+const { DemoCallRelay, isCallMessageType } = require('./presentation/websocket/demoCallRelay');
 const { getClientIp, roomLookupLimiter } = require('./presentation/http/middlewares/rateLimiter');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -218,6 +219,21 @@ function createServer(options = {}) {
     }
   }
 
+  // FE-01: relay call:* giữa hai người cầm Đỏ/Đen của trận demo (khán giả không tham gia)
+  const callRelay = new DemoCallRelay({
+    findClient: (color) => {
+      for (const [socket, seat] of clients) {
+        if (seat === color) return socket;
+      }
+      return null;
+    },
+    getName: (color) => {
+      const player = getCurrentMatch().players && getCurrentMatch().players[color];
+      return (player && player.name) || (color === 'red' ? 'Quân Đỏ' : 'Quân Đen');
+    },
+    send,
+  });
+
   function assignColor() {
     const occupied = new Set([...clients.values()].filter(Boolean));
     return ['red', 'black'].find((color) => !occupied.has(color)) || null;
@@ -229,6 +245,12 @@ function createServer(options = {}) {
       message = JSON.parse(rawMessage.toString());
     } catch {
       send(client, { type: 'error', error: 'Dữ liệu gửi lên không hợp lệ.' });
+      return;
+    }
+
+    // FE-01: tín hiệu WebRTC đi qua socket trận demo
+    if (isCallMessageType(message?.type)) {
+      callRelay.handle(client, clients.get(client) || null, message);
       return;
     }
 
@@ -336,7 +358,9 @@ function createServer(options = {}) {
       }
     });
     client.on('close', () => {
+      const seat = clients.get(client);
       clients.delete(client);
+      callRelay.handleSeatLeft(seat); // FE-01: người trong cuộc gọi rớt -> báo bên còn lại
       broadcastState();
     });
   });
@@ -346,6 +370,7 @@ function createServer(options = {}) {
 
   server.on('close', () => {
     clearInterval(clockTimer);
+    callRelay.close();
     // BE-07: dọn heartbeat/timer của roomHub khi server đóng
     if (roomHub && typeof roomHub.close === 'function') roomHub.close();
     for (const client of webSockets.clients) client.close();
