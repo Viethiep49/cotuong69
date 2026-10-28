@@ -7,6 +7,11 @@
  *  2. Cung cấp cụm nút Mic/Cam/Leave trực quan; thao tác Mute Mic / Tắt Cam cập nhật ngay lập tức.
  *  3. Nút "Rời cuộc gọi" ngắt kết nối video call an toàn, giải phóng PeerConnection, không ảnh hưởng ván cờ.
  *  4. Khán giả (Spectator) hoàn toàn không hiển thị khung video call và không thể tham gia.
+ *
+ * CLEAN-04: file này chỉ giữ các test chạy trên mã thật (WebRtcPeerConnection, MediaStreamManager).
+ * Các case tự định nghĩa hàm rồi test chính hàm đó (AC 1.2, 2.3, 3.2, 4.1-4.3) đã bị xoá; phần render /
+ * khán giả được test bằng React Testing Library ở tests/react/VideoCallOverlay.test.jsx và
+ * tests/react/useWebRtcCall.test.jsx.
  */
 
 const { test, describe } = require('node:test');
@@ -131,23 +136,6 @@ describe('Nghiệm thu Task COT-629: Nhận Remote Stream, Render Video đối t
       peer.pc.simulateInboundTrack(remoteVideoTrack, [fakeRemoteStream]);
     });
 
-    test('AC 1.2: Khi camera đối thủ bị tắt hoặc audio-only, cờ isRemoteCamOff kích hoạt fallback avatar', () => {
-      // Giả lập trạng thái Remote Stream chỉ có audio (audio-only)
-      const audioOnlyStream = createMockMediaStream({ video: false, audio: true });
-
-      const hasVideoTrack = audioOnlyStream.getVideoTracks().length > 0;
-      const isRemoteCamOff = !hasVideoTrack;
-
-      assert.strictEqual(isRemoteCamOff, true, 'isRemoteCamOff phải là true khi đối thủ không có track video');
-
-      // Kiểm tra logic hiển thị fallback
-      const shouldRenderVideoElement = Boolean(audioOnlyStream && !isRemoteCamOff);
-      const shouldRenderAvatarFallback = Boolean(!audioOnlyStream || isRemoteCamOff);
-
-      assert.strictEqual(shouldRenderVideoElement, false, 'Không render thẻ <video> khi tắt cam');
-      assert.strictEqual(shouldRenderAvatarFallback, true, 'Render khung Avatar Fallback đối thủ');
-    });
-
     test('AC 1.3: SDP Offer và SDP Answer được khởi tạo và cấu hình đúng chuẩn WebRTC', async () => {
       const peer = new WebRtcPeerConnection({
         peerConnectionFactory: MockRTCPeerConnection,
@@ -216,18 +204,6 @@ describe('Nghiệm thu Task COT-629: Nhận Remote Stream, Render Video đối t
       assert.strictEqual(videoTrack.enabled, true, 'Video track phải được enabled lại');
     });
 
-    test('AC 2.3: Định danh và nhãn hiển thị nút điều khiển tuân thủ đúng yêu cầu Accessibility', () => {
-      const controlButtons = [
-        { id: 'btn-mic', label: 'Bật/Tắt Microphone', icon: '🎙️' },
-        { id: 'btn-cam', label: 'Bật/Tắt Camera', icon: '📹' },
-        { id: 'btn-leave', label: 'Rời cuộc gọi Video', icon: '📞' },
-      ];
-
-      assert.strictEqual(controlButtons.length, 3, 'Phải cung cấp đủ 3 nút điều khiển cơ bản');
-      controlButtons.forEach((btn) => {
-        assert.ok(btn.label.length > 0, `Nút ${btn.id} phải có nhãn rõ ràng`);
-      });
-    });
   });
 
   // =========================================================================
@@ -253,39 +229,6 @@ describe('Nghiệm thu Task COT-629: Nhận Remote Stream, Render Video đối t
       assert.strictEqual(allTracks.every((t) => t.stopped), true, 'Tất cả các track cục bộ phải bị stop');
     });
 
-    test('AC 3.2: Rời cuộc gọi hoặc drop video call TUYỆT ĐỐI không làm thay đổi trạng thái ván cờ (matchState)', () => {
-      // Giả lập trạng thái trận cờ
-      const initialMatchState = {
-        matchId: 'MATCH-999',
-        status: 'active',
-        currentTurn: 'red',
-        moveNumber: 14,
-        board: [{ position: 'e4', piece: 'cannon' }],
-        clocks: { red: 420, black: 380 },
-      };
-
-      // Bản sao đối chứng
-      const matchStateBeforeHangup = JSON.parse(JSON.stringify(initialMatchState));
-
-      // Hành động ngắt video call
-      const hangupEvent = {
-        type: 'call:leave',
-        callId: 'call-xyz-123',
-        reason: 'USER_HANGUP',
-      };
-
-      // Đảm bảo không có reducer hoặc handler nào của Match bị đột biến
-      assert.strictEqual(hangupEvent.type, 'call:leave');
-      assert.deepStrictEqual(
-        initialMatchState,
-        matchStateBeforeHangup,
-        'Trạng thái ván cờ (lượt đi, bàn cờ, đồng hồ) phải được giữ nguyên vẹn 100%'
-      );
-      assert.strictEqual(initialMatchState.status, 'active');
-      assert.strictEqual(initialMatchState.currentTurn, 'red');
-      assert.strictEqual(initialMatchState.moveNumber, 14);
-    });
-
     test('AC 3.3: Dọn dẹp an toàn mang tính idempotent khi gọi nhiều lần', () => {
       const peer = new WebRtcPeerConnection({
         peerConnectionFactory: MockRTCPeerConnection,
@@ -296,61 +239,6 @@ describe('Nghiệm thu Task COT-629: Nhận Remote Stream, Render Video đối t
         peer.close();
         peer.close();
       }, 'Gọi close nhiều lần không được ném lỗi');
-    });
-  });
-
-  // =========================================================================
-  // AC 4: Khán giả (Spectator) không hiển thị khung video call và không tham gia
-  // =========================================================================
-  describe('AC 4: Phân quyền khán giả - Khán giả không thấy và không tham gia cuộc gọi', () => {
-    test('AC 4.1: Khi người dùng là Khán giả (isSpectator = true), khung VideoCallOverlay trả về null', () => {
-      function renderVideoCallOverlay({ isSpectator, callStatus }) {
-        if (isSpectator) {
-          return null; // Khán giả hoàn toàn không nhìn thấy gì
-        }
-        return { rendered: true, callStatus };
-      }
-
-      // Trường hợp là khán giả ở mọi trạng thái cuộc gọi
-      assert.strictEqual(renderVideoCallOverlay({ isSpectator: true, callStatus: 'IDLE' }), null);
-      assert.strictEqual(renderVideoCallOverlay({ isSpectator: true, callStatus: 'CALLING' }), null);
-      assert.strictEqual(renderVideoCallOverlay({ isSpectator: true, callStatus: 'INCOMING' }), null);
-      assert.strictEqual(renderVideoCallOverlay({ isSpectator: true, callStatus: 'CONNECTED' }), null);
-
-      // Trường hợp là kỳ thủ bình thường
-      const playerRender = renderVideoCallOverlay({ isSpectator: false, callStatus: 'CONNECTED' });
-      assert.ok(playerRender);
-      assert.strictEqual(playerRender.rendered, true);
-    });
-
-    test('AC 4.2: Khán giả không được phép gửi signaling hoặc bắt đầu cuộc gọi', async () => {
-      let callStarted = false;
-      const isSpectator = true;
-
-      async function attemptStartCall() {
-        if (isSpectator) {
-          return { error: 'FORBIDDEN_SPECTATOR' };
-        }
-        callStarted = true;
-        return { success: true };
-      }
-
-      const res = await attemptStartCall();
-      assert.strictEqual(res.error, 'FORBIDDEN_SPECTATOR');
-      assert.strictEqual(callStarted, false, 'Khán giả bị chặn tuyệt đối không thể bắt đầu cuộc gọi');
-    });
-
-    test('AC 4.3: Khi nhận signaling packet, nếu là khán giả thì tự động bỏ qua không xử lý', () => {
-      let packetProcessed = false;
-      const isSpectator = true;
-
-      function onSignalingMessage(msg) {
-        if (isSpectator) return;
-        packetProcessed = true;
-      }
-
-      onSignalingMessage({ type: 'CallIncoming', callId: '123' });
-      assert.strictEqual(packetProcessed, false, 'Gói tin signaling bị bỏ qua khi là khán giả');
     });
   });
 });

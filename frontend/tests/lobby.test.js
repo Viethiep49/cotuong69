@@ -11,8 +11,6 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
-const fs = require('node:fs');
-const path = require('node:path');
 const { RoomApiService } = require('../js/api.js');
 
 describe('Nghiệm thu Task COT-584: Code layout tổng thể Sảnh chờ (Lobby) và điều hướng chức năng', () => {
@@ -70,58 +68,6 @@ describe('Nghiệm thu Task COT-584: Code layout tổng thể Sảnh chờ (Lobb
     });
   });
 
-  // AC 2: Cấu trúc HTML & Khung điều hướng Sảnh chờ (Navigation Hub)
-  describe('AC 2: Khu vực điều hướng chính Sảnh Chờ (3 khối tính năng & tác vụ nhanh)', () => {
-    const indexPath = path.join(__dirname, '../index.html');
-    const indexHtml = fs.readFileSync(indexPath, 'utf-8');
-
-    test('AC 2.1: Header chứa đầy đủ các thành phần nhận diện người chơi', () => {
-      assert.ok(indexHtml.includes('id="currentUserName"'), 'Có phần tử hiển thị Tên người chơi');
-      assert.ok(indexHtml.includes('id="currentUserElo"'), 'Có phần tử hiển thị Điểm Elo');
-      assert.ok(indexHtml.includes('id="currentUserEloBadge"'), 'Có huy hiệu điểm Elo');
-      assert.ok(indexHtml.includes('id="currentUserAvatar"'), 'Có ảnh đại diện người chơi');
-      assert.ok(indexHtml.includes('id="headerLogoutBtn"'), 'Có nút Đăng xuất');
-      assert.ok(indexHtml.includes('>1000<'), 'Giá trị Elo hiển thị mặc định là 1000');
-    });
-
-    test('AC 2.2: Có đầy đủ 3 khối tính năng điều hướng: Chơi Online, Chơi với Máy, Bạn Bè', () => {
-      assert.ok(indexHtml.includes('id="navPlayOnlineCard"'), 'Có khối tính năng [Chơi Online]');
-      assert.ok(indexHtml.includes('id="navPlayAiCard"'), 'Có khối tính năng [Chơi Với Máy (PvE)]');
-      assert.ok(indexHtml.includes('id="navFriendsCard"'), 'Có khối tính năng [Danh Sách Bạn Bè]');
-
-      assert.ok(indexHtml.includes('Chơi Online'), 'Tiêu đề Chơi Online hiển thị rõ ràng');
-      assert.ok(indexHtml.includes('Chơi Với Máy'), 'Tiêu đề Chơi Với Máy hiển thị rõ ràng');
-      assert.ok(indexHtml.includes('Danh Sách Bạn Bè'), 'Tiêu đề Danh Sách Bạn Bè hiển thị rõ ràng');
-    });
-
-    test('AC 2.3: Có thanh tác vụ nhanh Tạo Phòng và Ô nhập mã 6 chữ số', () => {
-      assert.ok(indexHtml.includes('id="createRoomModalBtn"'), 'Có nút Tạo Room nhanh');
-      assert.ok(indexHtml.includes('id="roomCodeInput"'), 'Có ô nhập mã phòng nhanh');
-      assert.ok(indexHtml.includes('id="joinCodeForm"'), 'Có Form nhập mã phòng');
-      // BE-14: phòng riêng tư có mã 10 ký tự nên ô nhập cho phép tối đa 10 ký tự
-      assert.ok(indexHtml.includes('maxlength="10"'), 'Ô nhập mã giới hạn tối đa 10 ký tự');
-    });
-  });
-
-  // AC 3: Kiểm tra CSS Design System & Responsive layout
-  describe('AC 3: Bố cục giao diện cờ Tướng trang nhã & Responsive đa thiết bị', () => {
-    const cssPath = path.join(__dirname, '../css/style.css');
-    const styleCss = fs.readFileSync(cssPath, 'utf-8');
-
-    test('AC 3.1: CSS định nghĩa đầy đủ các class cho khối điều hướng và huy hiệu Elo', () => {
-      assert.ok(styleCss.includes('.lobby-navigation-section'), 'Có class .lobby-navigation-section');
-      assert.ok(styleCss.includes('.lobby-mode-cards-grid'), 'Có class .lobby-mode-cards-grid');
-      assert.ok(styleCss.includes('.lobby-mode-card'), 'Có class .lobby-mode-card');
-      assert.ok(styleCss.includes('.elo-badge'), 'Có class .elo-badge');
-      assert.ok(styleCss.includes('--gold-primary'), 'Sử dụng biến màu sắc hoàng kim chủ đạo');
-      assert.ok(styleCss.includes('--chinese-red'), 'Sử dụng màu cờ Tướng đặc trưng');
-    });
-
-    test('AC 3.2: Định nghĩa Media Queries hỗ trợ Responsive trên Tablet và Mobile', () => {
-      assert.ok(styleCss.includes('@media (max-width: 992px)') || styleCss.includes('@media (max-width: 768px)'),
-        'Có media query responsive cho kích thước màn hình nhỏ hơn');
-      assert.ok(styleCss.includes('grid-template-columns: 1fr'),
-        'Chuyển về layout 1 cột trên màn hình nhỏ');
-    });
-  });
+  // CLEAN-04: AC 2 (id có trong index.html) và AC 3 (chuỗi class/media query có trong style.css) chỉ
+  // kiểm tra chuỗi nên đã xoá; hợp đồng id giữa JS và HTML nằm ở tests/dom-contract.test.js.
 });

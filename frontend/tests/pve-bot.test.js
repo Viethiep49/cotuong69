@@ -12,8 +12,6 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
-const fs = require('node:fs');
-const path = require('node:path');
 const { PveApiService, PveGameController, PVE_COLORS } = require('../js/pve.js');
 const { installFakePveBackend } = require('./helpers/fakePveBackend.js');
 

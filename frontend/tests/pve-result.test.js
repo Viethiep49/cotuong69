@@ -10,8 +10,6 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 
 const {
   PveApiService,
@@ -146,23 +144,6 @@ describe('COT-640: Thao tác Đầu hàng (Xin thua) & Popup Kết quả PvE', (
     assert.equal(resultDetails.hasEloRating, false);
   });
 
-  test('AC 5: Tồn tại đầy đủ thành phần DOM trong frontend/index.html', () => {
-    const indexHtml = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
-
-    // Nút Xin thua
-    assert.ok(indexHtml.includes('id="pveResignBtn"'), 'Có nút pveResignBtn');
-    assert.ok(indexHtml.includes('data-testid="pve-resign-btn"'), 'Có data-testid pve-resign-btn');
-
-    // Modal xác nhận đầu hàng
-    assert.ok(indexHtml.includes('id="pveResignConfirmModal"'), 'Có pveResignConfirmModal');
-    assert.ok(indexHtml.includes('id="pveConfirmResignBtn"'), 'Có nút pveConfirmResignBtn');
-    assert.ok(indexHtml.includes('id="pveCancelResignBtn"'), 'Có nút pveCancelResignBtn');
-
-    // Modal popup kết quả ván đấu
-    assert.ok(indexHtml.includes('id="pveMatchResultModal"'), 'Có pveMatchResultModal');
-    assert.ok(indexHtml.includes('id="pveResultTitleText"'), 'Có tiêu đề kết quả');
-    assert.ok(indexHtml.includes('id="pveResultReason"'), 'Có hiển thị lý do kết thúc');
-    assert.ok(indexHtml.includes('id="pveResultNewGameBtn"'), 'Có nút chơi ván mới');
-    assert.ok(indexHtml.includes('id="pveResultBackToLobbyBtn"'), 'Có nút trở về sảnh');
-  });
+  // CLEAN-04: AC 5 cũ chỉ kiểm tra chuỗi id trong index.html; id mà js/pve.js dùng được kiểm tra
+  // bằng tests/dom-contract.test.js.
 });
