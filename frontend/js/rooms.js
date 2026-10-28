@@ -681,6 +681,16 @@ document.addEventListener('DOMContentLoaded', () => {
       return pveSharedApi;
     }
 
+    // PVE-UI: điều hướng tới màn hình chơi với máy do React render (xem src/Root.jsx)
+    function openPveMatchScreen(matchId) {
+      const url = new URL(window.location.href);
+      url.search = '';
+      url.hash = '';
+      url.searchParams.set('pveMatchId', String(matchId));
+      window.location.assign(url.toString());
+    }
+    window.openPveMatchScreen = openPveMatchScreen;
+
     function openPveModal() {
       if (!pveStartModal) return;
       if (pveStartError) {
@@ -753,6 +763,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const event = new CustomEvent('cotuong:pve-started', { detail: response.match });
             window.dispatchEvent(event);
+
+            // PVE-UI: chuyển sang màn hình bàn cờ React (/?pveMatchId=<id>) để chơi thật;
+            // tải lại trang vẫn tiếp tục đúng ván vì trạng thái nằm ở máy chủ.
+            openPveMatchScreen(response.match.id);
           }
         } catch (err) {
           if (pveStartError) {
