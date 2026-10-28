@@ -383,9 +383,27 @@ class RoomHub {
       }
     };
     if (socket && typeof socket.on === 'function') socket.on('error', onSocketError);
+
+    // REV2-16: đếm lượt tra mã phòng NGAY LÚC ĐẾN (đồng bộ, trước await kiểm tra phiên). Trước đây
+    // chỉ chặn bằng isBlocked lúc đến và record sau await nên một đợt upgrade song song với hàng
+    // nghìn mã bịa đều lọt qua. Lượt được hoàn lại nếu mã phòng TỒN TẠI (không phạt kết nối hợp lệ).
+    const lookupKey = `room-lookup:${getClientIp(request)}`;
+    const lookup = roomLookupLimiter.consume(lookupKey);
+    if (!lookup.allowed) {
+      try {
+        socket.write('HTTP/1.1 429 Too Many Requests\r\nRetry-After: 60\r\nConnection: close\r\n\r\n');
+      } catch {
+        /* ignore */
+      }
+      socket.destroy();
+      if (typeof socket.removeListener === 'function') socket.removeListener('error', onSocketError);
+      return;
+    }
+    const lookupState = { missed: false };
     try {
-      await this._handleUpgradeInner(request, socket, head);
+      await this._handleUpgradeInner(request, socket, head, lookupState);
     } finally {
+      if (!lookupState.missed) roomLookupLimiter.refund(lookupKey, lookup.ts);
       // Đã giao cho ws (hoặc đã huỷ): bỏ listener tạm để không rò rỉ
       if (socket && typeof socket.removeListener === 'function') {
         socket.removeListener('error', onSocketError);
@@ -393,7 +411,7 @@ class RoomHub {
     }
   }
 
-  async _handleUpgradeInner(request, socket, head) {
+  async _handleUpgradeInner(request, socket, head, lookupState) {
     let urlObj;
     try {
       urlObj = new URL(request.url, 'http://localhost');
@@ -461,8 +479,8 @@ class RoomHub {
 
     const room = this.roomManager.findByCode(roomCode);
     if (!room) {
-      // REV-04: mã không tồn tại -> đếm vào hạn mức tra mã phòng của IP này
-      roomLookupLimiter.record(`room-lookup:${getClientIp(request)}`);
+      // REV-04: mã không tồn tại -> lượt tra mã (đã đếm lúc đến, REV2-16) được GIỮ LẠI, không hoàn
+      lookupState.missed = true;
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
       socket.destroy();
       return;

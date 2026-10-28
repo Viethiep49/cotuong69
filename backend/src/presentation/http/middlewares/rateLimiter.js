@@ -76,7 +76,22 @@ class SlidingWindowLimiter {
     recent.push(now);
     if (!this.hits.has(key)) this.evictIfFull();
     this.hits.set(key, recent);
-    return { allowed: true, remaining: Math.max(0, this.limit - recent.length), retryAfterMs: 0 };
+    // REV2-16: trả lại `ts` để bên gọi hoàn lại (refund) đúng lượt này khi hoá ra không phải thất bại
+    return { allowed: true, remaining: Math.max(0, this.limit - recent.length), retryAfterMs: 0, ts: now };
+  }
+
+  /**
+   * REV2-16: hoàn lại MỘT lượt đã ghi nhận lúc request đến (consume/record) — dùng khi request
+   * cuối cùng không phải lần thất bại (đăng nhập thành công, mã phòng tồn tại...).
+   * Chỉ bỏ đúng lượt của request này, KHÔNG xoá các lần thất bại khác của cùng key.
+   */
+  refund(key, ts) {
+    if (!key) return;
+    const list = this.hits.get(key);
+    if (!list) return;
+    const index = list.indexOf(ts);
+    if (index !== -1) list.splice(index, 1);
+    if (list.length === 0) this.hits.delete(key);
   }
 
   reset(key) {

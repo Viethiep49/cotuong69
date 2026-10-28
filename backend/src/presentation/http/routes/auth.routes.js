@@ -141,12 +141,19 @@ function createAuthHandler({
         return;
       }
 
-      // BE-13 + REV-04: IP chỉ bị đếm khi đăng nhập THẤT BẠI (trước đây đếm mọi
-      // request, kể cả đăng nhập đúng). Username chỉ bị làm chậm, không khoá hẳn
-      // -> kẻ xấu không thể khoá tài khoản người khác.
+      // BE-13 + REV-04: IP chỉ bị đếm khi đăng nhập THẤT BẠI (đăng nhập đúng không bị tính).
+      // Username chỉ bị làm chậm, không khoá hẳn -> kẻ xấu không thể khoá tài khoản người khác.
+      //
+      // REV2-16: lượt thử phải được ĐẾM NGAY LÚC REQUEST ĐẾN (đồng bộ, trước mọi await). Trước đây
+      // chỉ `isBlocked` lúc đến và `record` sau khi bcrypt xong nên 200 request song song từ một IP
+      // đều được xử lý. Giờ lượt được ghi ngay và chỉ hoàn lại (refund) nếu đó không phải thất bại.
+      // REV2-17: đăng nhập thành công KHÔNG xoá bộ đếm của IP (nếu xoá thì kẻ xấu xen 1 lần đăng nhập
+      // vào tài khoản của mình giữa mỗi 9 lần đoán để không bao giờ bị chặn); chỉ hoàn lại lượt của
+      // chính request đó.
       const loginIpKey = `login-ip:${getClientIp(request)}`;
-      if (loginLimiter.isBlocked(loginIpKey)) {
-        const retryAfterSeconds = 60;
+      const ipAttempt = loginLimiter.consume(loginIpKey);
+      if (!ipAttempt.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(ipAttempt.retryAfterMs / 1000)) || 60;
         response.setHeader?.('Retry-After', String(retryAfterSeconds));
         sendJson(response, 429, {
           error: 'Bạn đã thử quá nhiều lần. Vui lòng thử lại sau ít phút.',
@@ -155,32 +162,56 @@ function createAuthHandler({
         });
         return;
       }
+      let ipCounted = true;
+      const refundIp = () => {
+        if (!ipCounted) return;
+        ipCounted = false;
+        loginLimiter.refund(loginIpKey, ipAttempt.ts);
+      };
 
       let payload;
       try {
         payload = await parseJsonBody(request);
       } catch (err) {
+        refundIp();
         sendJson(response, 400, { error: err.message });
         return;
       }
 
       const loginKey = typeof payload.username === 'string' ? payload.username.trim().toLowerCase() : '';
+      const userKey = loginKey ? `login-user:${loginKey}` : null;
+      // REV2-16: độ trễ tính từ số lượt đã đếm (kể cả đang xử lý song song) rồi đếm luôn lượt này
       const slowDownMs = loginKey ? loginSlowdownMs(loginKey) : 0;
+      const userTs = Date.now();
+      let userCounted = false;
+      if (userKey) {
+        loginUsernameLimiter.record(userKey, userTs);
+        userCounted = true;
+      }
+      const refundUser = () => {
+        if (!userCounted) return;
+        userCounted = false;
+        loginUsernameLimiter.refund(userKey, userTs);
+      };
       if (slowDownMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, slowDownMs));
       }
 
       try {
         const result = await loginUseCase.execute(payload);
-        // Đăng nhập thành công -> xoá bộ đếm thất bại của IP và username
-        loginLimiter.reset(loginIpKey);
-        if (loginKey) loginUsernameLimiter.reset(`login-user:${loginKey}`);
+        // Đăng nhập thành công: hoàn lượt của IP; bộ đếm của USERNAME này thì xoá hẳn (chủ tài khoản
+        // đã chứng minh được mật khẩu). KHÔNG đụng bộ đếm thất bại của IP.
+        refundIp();
+        if (userKey) {
+          loginUsernameLimiter.reset(userKey);
+          userCounted = false;
+        }
         sendJson(response, 200, result);
       } catch (err) {
-        // Chỉ đếm các lần thất bại thực sự (sai thông tin / tài khoản bị khoá)
-        if (err.code === 'INVALID_CREDENTIALS' || err.code === 'ACCOUNT_INACTIVE') {
-          loginLimiter.record(loginIpKey);
-          if (loginKey) loginUsernameLimiter.record(`login-user:${loginKey}`);
+        // Chỉ giữ lại lượt đã đếm với các lần thất bại thực sự (sai thông tin / tài khoản bị khoá)
+        if (err.code !== 'INVALID_CREDENTIALS' && err.code !== 'ACCOUNT_INACTIVE') {
+          refundIp();
+          refundUser();
         }
         if (err.code === 'VALIDATION_ERROR') {
           sendJson(response, 400, { error: err.message });
