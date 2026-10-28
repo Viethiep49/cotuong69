@@ -10,6 +10,15 @@ function apiOrigin() {
   return `${origin}${apiBaseUrl.startsWith('/') ? '' : '/'}${apiBaseUrl}`;
 }
 
+// FE-08: lỗi mang theo mã HTTP để hook quyết định có nên thử lại hay không
+export class MatchApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = 'MatchApiError';
+    this.status = status;
+  }
+}
+
 export function matchWebSocketUrl(matchId) {
   const url = new URL(`${apiOrigin()}/matches/${encodeURIComponent(matchId)}/ws`);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -29,9 +38,26 @@ export async function fetchMatch(matchId, { signal } = {}) {
     signal,
   });
 
-  const match = await response.json();
+  // FE-08: kiểm tra content-type trước khi .json() (proxy/server lỗi có thể trả HTML)
+  const contentType = response.headers && typeof response.headers.get === 'function'
+    ? response.headers.get('content-type') || ''
+    : 'application/json';
+  let match = null;
+  if (/json/i.test(contentType)) {
+    try {
+      match = await response.json();
+    } catch {
+      match = null;
+    }
+  }
   if (!response.ok) {
-    throw new Error(match.error || `Không thể tải trận đấu (${response.status})`);
+    throw new MatchApiError(
+      (match && match.error) || `Không thể tải trận đấu (${response.status})`,
+      response.status,
+    );
+  }
+  if (!match || typeof match !== 'object') {
+    throw new MatchApiError('Máy chủ trả về dữ liệu trận đấu không hợp lệ.', response.status);
   }
 
   return match;

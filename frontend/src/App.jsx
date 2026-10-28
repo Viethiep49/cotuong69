@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import XiangqiBoard from './presentation/components/board/XiangqiBoard';
 import ChatBox from './presentation/components/chat/ChatBox';
 import VideoCallOverlay from './presentation/components/video/VideoCallOverlay';
 import { useMatch } from './application/hooks/useMatch';
 import { useWebRtcCall } from './application/hooks/useWebRtcCall';
+import { BoardSyncManager } from './domain/game/boardSyncManager';
+import { moveSoundPlayer } from './infrastructure/sound/moveSound';
 import './styles.css';
 
 function formatClock(seconds = 0) {
@@ -87,31 +89,11 @@ function CapturedTray({ color, pieces }) {
   );
 }
 
-function playMoveSound(captured) {
-  const AudioContextType = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextType) return;
-
-  const audio = new AudioContextType();
-  const oscillator = audio.createOscillator();
-  const gain = audio.createGain();
-  oscillator.type = 'sine';
-  oscillator.frequency.value = captured ? 520 : 660;
-  gain.gain.setValueAtTime(0.0001, audio.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.12, audio.currentTime + 0.012);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.16);
-  oscillator.connect(gain);
-  gain.connect(audio.destination);
-  oscillator.start();
-  oscillator.stop(audio.currentTime + 0.17);
-  oscillator.addEventListener('ended', () => audio.close());
-}
-
 function App() {
   const matchId = new URLSearchParams(window.location.search).get('matchId');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [perspectiveEnabled, setPerspectiveEnabled] = useState(false);
   const [captureEffect, setCaptureEffect] = useState(null);
-  const [capturedPieces, setCapturedPieces] = useState({ red: [], black: [] });
   const previousMoveRef = useRef(undefined);
   const previousBoardRef = useRef(null);
   const captureEffectTimeoutRef = useRef(null);
@@ -167,6 +149,24 @@ function App() {
     }
   }, [setSignalingHandler, handleSignalingMessage]);
 
+  // FE-08: khay quân bị bắt tính từ bàn cờ hiện tại (đúng cả khi tải lại trang / kết nối lại),
+  // không cộng dồn theo từng lastMove như trước.
+  const capturedPieces = useMemo(
+    () => (match?.board ? BoardSyncManager.deriveCapturedPieces(match.board) : { red: [], black: [] }),
+    [match?.board],
+  );
+
+  // FE-08: mở khóa AudioContext dùng chung ở thao tác đầu tiên của người dùng
+  useEffect(() => {
+    const unlock = () => moveSoundPlayer.unlock();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
   useEffect(() => {
     document.body.classList.toggle('match-view', Boolean(matchId));
     return () => document.body.classList.remove('match-view');
@@ -185,18 +185,12 @@ function App() {
       return;
     }
     if (lastMoveKey && previousMoveRef.current !== lastMoveKey) {
-      if (soundEnabled) playMoveSound(Boolean(lastMove.captured));
+      if (soundEnabled) moveSoundPlayer.play(Boolean(lastMove.captured));
       if (lastMove.captured) {
         const capturedPiece = previousBoardRef.current?.find(
           (piece) => piece.position === lastMove.to && piece.color !== lastMove.color,
         );
         setCaptureEffect({ key: lastMoveKey, position: lastMove.to, capturedPiece });
-        if (capturedPiece) {
-          setCapturedPieces((current) => ({
-            ...current,
-            [capturedPiece.color]: [...current[capturedPiece.color], capturedPiece],
-          }));
-        }
         window.clearTimeout(captureEffectTimeoutRef.current);
         captureEffectTimeoutRef.current = window.setTimeout(() => {
           setCaptureEffect(null);
@@ -206,19 +200,6 @@ function App() {
     previousMoveRef.current = lastMoveKey;
     previousBoardRef.current = match.board;
   }, [lastMove, lastMoveKey, match, soundEnabled]);
-
-  useEffect(() => {
-    if (match?.capturedPieces) {
-      setCapturedPieces((current) => {
-        const redFromMatch = Array.isArray(match.capturedPieces.red) ? match.capturedPieces.red : [];
-        const blackFromMatch = Array.isArray(match.capturedPieces.black) ? match.capturedPieces.black : [];
-        if (redFromMatch.length > 0 || blackFromMatch.length > 0) {
-          return { red: redFromMatch, black: blackFromMatch };
-        }
-        return current;
-      });
-    }
-  }, [match?.capturedPieces]);
 
   useEffect(() => () => window.clearTimeout(captureEffectTimeoutRef.current), []);
 

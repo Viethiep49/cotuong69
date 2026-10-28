@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchMatch, matchWebSocketProtocols, matchWebSocketUrl } from '../../infrastructure/api/matchApi';
 import { ReconnectManager } from '../../domain/network/reconnectManager';
 import { BoardSyncManager } from '../../domain/game/boardSyncManager';
+import {
+  browserOnlineAction,
+  isFatalCloseCode,
+  isFatalHttpStatus,
+  nextRetryDelay,
+  resolveReadOnly,
+} from '../../domain/network/reconnectPolicy';
 
 function isMatchColor(color) {
   return color === 'red' || color === 'black';
@@ -66,6 +73,8 @@ export function useMatch(matchId) {
   const socketRef = useRef(null);
   const pendingRef = useRef(false);
   const signalingHandlerRef = useRef(null);
+  // FE-08: sự kiện `online` của trình duyệt gọi hàm này để kết nối lại NGAY (không chờ backoff)
+  const reconnectNowRef = useRef(null);
 
   // Lắng nghe thay đổi trạng thái từ ReconnectManager
   useEffect(() => {
@@ -81,7 +90,15 @@ export function useMatch(matchId) {
   // Lắng nghe sự kiện offline / online của trình duyệt
   useEffect(() => {
     function handleBrowserOnline() {
-      reconnectManager.handleSelfReconnect();
+      // FE-08: `online` chưa có nghĩa WebSocket đã sống lại -> chỉ mở khóa bàn cờ khi socket
+      // thật sự OPEN; ngược lại kết nối lại ngay và giữ nguyên trạng thái khóa.
+      const socket = socketRef.current;
+      const socketOpen = Boolean(socket && socket.readyState === WebSocket.OPEN);
+      if (browserOnlineAction({ socketOpen }) === 'MARK_CONNECTED') {
+        reconnectManager.handleSelfReconnect();
+      } else if (typeof reconnectNowRef.current === 'function') {
+        reconnectNowRef.current();
+      }
     }
     function handleBrowserOffline() {
       reconnectManager.handleSelfDisconnect('BROWSER_OFFLINE');
@@ -110,13 +127,23 @@ export function useMatch(matchId) {
 
     let cancelled = false;
     let retryTimeout;
-    let retryDelay = 500;
+    let attempt = 0; // FE-08: số lần thất bại liên tiếp, dùng cho backoff có jitter
+    let inFlight = false;
     let controller = new AbortController();
     let socket;
 
+    function scheduleRetry() {
+      window.clearTimeout(retryTimeout);
+      retryTimeout = window.setTimeout(connect, nextRetryDelay(attempt));
+      attempt += 1;
+    }
+
     async function connect() {
+      if (cancelled || inFlight) return;
+      inFlight = true;
       try {
         const match = await fetchMatch(matchId, { signal: controller.signal });
+        inFlight = false;
         if (cancelled) return;
         setState((current) => ({ ...current, match, loading: false, error: null }));
 
@@ -125,7 +152,7 @@ export function useMatch(matchId) {
         socketRef.current = socket;
         socket.addEventListener('open', () => {
           if (!cancelled) {
-            retryDelay = 500;
+            attempt = 0;
             reconnectManager.handleSelfReconnect();
             setState((current) => ({ ...current, connected: true, error: null }));
           }
@@ -166,7 +193,8 @@ export function useMatch(matchId) {
                 ...current,
                 match: withCheckStatus(message.state, message, current.match),
                 color: message.color,
-                readOnly: message.readOnly,
+                // FE-08: thiếu readOnly thì suy từ màu (khán giả không có màu) thay vì undefined
+                readOnly: resolveReadOnly(message),
                 loading: false,
                 connected: true,
                 error: null,
@@ -255,20 +283,29 @@ export function useMatch(matchId) {
             }));
           }
         });
-        socket.addEventListener('close', () => {
+        socket.addEventListener('close', (event) => {
           if (cancelled) return;
           socketRef.current = null;
           pendingRef.current = false;
           // COT-601: Mất kết nối WebSocket -> hiển thị overlay mạng chập chờn
           reconnectManager.handleSelfDisconnect('WS_DISCONNECTED');
+          // FE-08: server chủ động từ chối (1008 / 4xxx) thì không thử lại vô hạn
+          if (isFatalCloseCode(event && event.code)) {
+            setState((current) => ({
+              ...current,
+              connected: false,
+              movePending: false,
+              error: 'Máy chủ từ chối kết nối thời gian thực.',
+            }));
+            return;
+          }
           setState((current) => ({
             ...current,
             connected: false,
             movePending: false,
             error: 'Mất kết nối thời gian thực — đang kết nối lại.',
           }));
-          retryTimeout = window.setTimeout(connect, retryDelay);
-          retryDelay = Math.min(retryDelay * 2, 5000);
+          scheduleRetry();
         });
         socket.addEventListener('error', () => {
           if (!cancelled) {
@@ -280,18 +317,33 @@ export function useMatch(matchId) {
           }
         });
       } catch (error) {
+        inFlight = false;
         if (!cancelled && error.name !== 'AbortError') {
-          reconnectManager.handleSelfDisconnect('FETCH_FAILED');
+          // FE-08: lỗi 4xx (chưa đăng nhập, không có trận...) thử lại cũng vô ích -> dừng
+          const fatal = isFatalHttpStatus(error.status);
+          if (!fatal) reconnectManager.handleSelfDisconnect('FETCH_FAILED');
           setState((current) => ({
             ...current,
             loading: false,
             error: error.message || 'Không thể kết nối tới máy chủ trận đấu.',
           }));
-          retryTimeout = window.setTimeout(connect, retryDelay);
-          retryDelay = Math.min(retryDelay * 2, 5000);
+          if (!fatal) scheduleRetry();
         }
       }
     }
+
+    reconnectNowRef.current = () => {
+      if (cancelled) return;
+      const current = socketRef.current;
+      if (current && current.readyState === WebSocket.OPEN) {
+        reconnectManager.handleSelfReconnect();
+        return;
+      }
+      if (current && current.readyState === WebSocket.CONNECTING) return;
+      window.clearTimeout(retryTimeout);
+      attempt = 0;
+      connect();
+    };
 
     connect();
 
@@ -302,17 +354,29 @@ export function useMatch(matchId) {
       socket?.close();
       socketRef.current = null;
       pendingRef.current = false;
-      reconnectManager.destroy();
+      reconnectNowRef.current = null;
+      // FE-08: KHÔNG destroy() ở đây — destroy xoá luôn listener UI (đã đăng ký ở effect khác),
+      // đổi matchId xong giao diện sẽ không còn nhận cập nhật. Chỉ dừng đếm ngược.
+      reconnectManager.stopCountdownTimer();
     };
   }, [matchId, reconnectManager]);
 
   const sendMove = useCallback((from, to) => {
     // COT-601 AC 2: Khóa toàn bộ thao tác gửi nước đi khi đang mất kết nối
+    // FE-08: trả false thì phải báo lỗi cho người chơi thay vì im lặng
     if (!reconnectManager.canMakeMove()) {
+      setState((current) => ({ ...current, moveError: 'Chưa thể đi quân lúc này (đang tạm khóa do mất kết nối hoặc ván đã kết thúc).' }));
       return false;
     }
     const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN || pendingRef.current) return false;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setState((current) => ({ ...current, moveError: 'Chưa kết nối máy chủ nên chưa gửi được nước đi.' }));
+      return false;
+    }
+    if (pendingRef.current) {
+      setState((current) => ({ ...current, moveError: 'Đang chờ máy chủ xác nhận nước đi trước.' }));
+      return false;
+    }
     pendingRef.current = true;
     setState((current) => ({ ...current, movePending: true, moveError: null, moveResult: null }));
     socket.send(JSON.stringify({ type: 'move', from, to }));
