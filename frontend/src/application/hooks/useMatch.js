@@ -157,6 +157,7 @@ export function useMatch(matchId, { roomCode = null } = {}) {
     let retryTimeout;
     let attempt = 0; // FE-08: số lần thất bại liên tiếp, dùng cho backoff có jitter
     let inFlight = false;
+    let lastMatchStatus = null; // REV2-10: trạng thái ván ở message state/welcome gần nhất
     let controller = new AbortController();
     let socket;
 
@@ -227,12 +228,21 @@ export function useMatch(matchId, { roomCode = null } = {}) {
                 connected: true,
                 error: null,
               }));
-              if (message.state?.status === 'completed' && message.state?.winner) {
-                reconnectManager.handleServerMatchResult({
-                  winner: message.state.winner,
-                  reason: message.state.endReason || 'COMPLETED',
-                });
+              // REV2-10: chỉ xử lý kết quả khi CHUYỂN vào 'completed'; khi trạng thái rời 'completed'
+              // (demo tự reset ván mới) phải bỏ kết quả cũ, nếu không cả hai bàn bị khoá mãi.
+              const nextStatus = message.state?.status;
+              if (nextStatus === 'completed') {
+                if (lastMatchStatus !== 'completed' && message.state?.winner &&
+                  !reconnectManager.serverResult) {
+                  reconnectManager.handleServerMatchResult({
+                    winner: message.state.winner,
+                    reason: message.state.endReason || 'COMPLETED',
+                  });
+                }
+              } else if (nextStatus) {
+                reconnectManager.clearServerResult();
               }
+              if (nextStatus) lastMatchStatus = nextStatus;
             } else if (
               message.type === 'opponentDisconnected' ||
               message.type === 'match:opponentDisconnected'

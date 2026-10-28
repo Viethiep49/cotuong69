@@ -342,6 +342,50 @@ describe('useMatch', () => {
     });
   });
 
+  describe('REV2-10: demo tự reset ván mới sau khi kết thúc', () => {
+    const state = (patch) => ({ ...MATCH, ...patch });
+    const push = (patch) => lastSocket().receive({ type: 'state', color: 'red', readOnly: false, state: state(patch) });
+
+    it('state completed khoá bàn; state active tiếp theo mở khoá lại và sendMove gửi được', async () => {
+      const { result } = await renderConnectedMatch();
+      await waitFor(() => expect(result.current.connected).toBe(true));
+
+      push({ status: 'completed', winner: 'black', endReason: 'TIMEOUT' });
+      expect(result.current.reconnectState.serverResult).toMatchObject({ winner: 'black' });
+      expect(result.current.reconnectState.canMove).toBe(false);
+
+      // ván mới (REV-19 tự reset)
+      push({ status: 'active', winner: null, endReason: null });
+      expect(result.current.reconnectState.serverResult).toBeNull();
+      expect(result.current.reconnectState.canMove).toBe(true);
+
+      let sent;
+      act(() => { sent = result.current.sendMove('a3', 'a4'); });
+      expect(sent).toBe(true);
+      expect(lastSocket().sent.at(-1)).toMatchObject({ type: 'move', from: 'a3', to: 'a4' });
+    });
+
+    it('matchEnded rồi state completed không ghi đè kết quả; reset xong vẫn mở khoá', async () => {
+      const { result } = await renderConnectedMatch();
+      push({ status: 'active' });
+      lastSocket().receive({ type: 'matchEnded', winner: 'red', winnerColor: 'red', reason: 'CHECKMATE', message: 'Đỏ thắng' });
+      push({ status: 'completed', winner: 'red', endReason: 'CHECKMATE' });
+      expect(result.current.reconnectState.serverResult).toMatchObject({ message: 'Đỏ thắng' });
+
+      push({ status: 'active' });
+      expect(result.current.reconnectState.canMove).toBe(true);
+    });
+
+    it('state completed lặp lại (cùng ván) không mở khoá và không tạo kết quả mới', async () => {
+      const { result } = await renderConnectedMatch();
+      push({ status: 'completed', winner: 'red', endReason: 'RESIGN' });
+      const first = result.current.reconnectState.serverResult;
+      push({ status: 'completed', winner: 'red', endReason: 'RESIGN' });
+      expect(result.current.reconnectState.serverResult).toBe(first);
+      expect(result.current.reconnectState.canMove).toBe(false);
+    });
+  });
+
   describe('định tuyến tin từ server', () => {
     it('ChatMessage / ChatError đi tới subscribeChat, không thành lỗi nước đi', async () => {
       const { result } = await renderConnectedMatch();
