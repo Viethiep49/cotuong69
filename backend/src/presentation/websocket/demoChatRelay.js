@@ -5,13 +5,14 @@
  * chính socket trận demo. Giao thức giống roomHub để frontend dùng chung code:
  *   client -> server : { type: 'chat:send' | 'chat', text, clientId? }
  *   server -> client : ChatMessage { id, clientId, senderName, side, text, timestamp }
- *                      error { code: EMPTY_MESSAGE | MESSAGE_TOO_LONG | CHAT_RATE_LIMITED, message }
+ *                      error { code: EMPTY_MESSAGE | MESSAGE_TOO_LONG | CHAT_RATE_LIMITED | SPECTATOR_CANNOT_CHAT, message }
  *
  * Giới hạn (cùng BE-07):
  *  - tối đa 500 ký tự sau khi trim, không được rỗng;
  *  - 5 tin / 3 giây trên mỗi socket;
  *  - tin được gửi cho MỌI người trong trận (kể cả người gửi — chính là "ack" để UI báo "Đã gửi"
- *    — và khán giả). Tên người gửi lấy từ phe: Đỏ / Đen / Khán giả, không tin tên client gửi lên.
+ *    — và khán giả). Khán giả chỉ nhận, không được gửi (REV2-08). Tên người gửi lấy từ phe: Đỏ / Đen,
+ *    không tin tên client gửi lên.
  */
 const crypto = require('node:crypto');
 
@@ -64,6 +65,11 @@ class DemoChatRelay {
    * @param {object} payload tin nhắn đã parse
    */
   handle(client, color, payload) {
+    // REV2-08: quyết định chủ dự án — khán giả chỉ xem, không được gửi chat (vẫn NHẬN tin của người chơi)
+    if (color !== 'red' && color !== 'black') {
+      this._error(client, 'SPECTATOR_CANNOT_CHAT', 'Khán giả chỉ được xem, không thể gửi tin nhắn.');
+      return;
+    }
     const raw = payload.text !== undefined ? payload.text : payload.message;
     if (typeof raw !== 'string' || !raw.trim()) {
       this._error(client, 'EMPTY_MESSAGE', 'Không thể gửi tin nhắn rỗng hoặc chỉ chứa khoảng trắng.');
@@ -82,8 +88,8 @@ class DemoChatRelay {
     const message = {
       type: 'ChatMessage',
       id: `msg_${this.now()}_${crypto.randomUUID().slice(0, 8)}`,
-      senderName: SIDE_NAMES[color] || 'Khán giả',
-      side: color ? color.toUpperCase() : 'SPECTATOR',
+      senderName: SIDE_NAMES[color],
+      side: color.toUpperCase(),
       text,
       timestamp: this.now(),
     };

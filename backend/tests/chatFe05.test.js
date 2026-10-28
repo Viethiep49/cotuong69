@@ -58,10 +58,15 @@ describe('FE-05: DemoChatRelay (đơn vị)', () => {
     assert.equal(sent[0].message.senderName, 'Đen');
     assert.equal('clientId' in sent[0].message, false);
 
-    sent.length = 0;
+  });
+
+  test('REV2-08: khán giả gửi chat bị từ chối SPECTATOR_CANNOT_CHAT, không phát cho ai', () => {
+    const { relay, sent, clients } = makeRelay();
     relay.handle(clients[2], null, { type: 'chat:send', text: 'x' });
-    assert.equal(sent[0].message.senderName, 'Khán giả');
-    assert.equal(sent[0].message.side, 'SPECTATOR');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].client, clients[2]);
+    assert.equal(sent[0].message.type, 'error');
+    assert.equal(sent[0].message.code, 'SPECTATOR_CANNOT_CHAT');
   });
 
   test('rỗng / chỉ khoảng trắng / không phải chuỗi -> EMPTY_MESSAGE, không phát', () => {
@@ -163,13 +168,21 @@ describe('FE-05: chat qua WS trận demo (server thật)', () => {
     const reply = await waitFor(red.inbox, (m) => m.type === 'ChatMessage' && m.text === 'Chào Đỏ');
     assert.equal(reply.senderName, 'Đen');
 
+    // REV2-08: khán giả nhận được tin nhưng KHÔNG gửi được
     spectator.ws.send(JSON.stringify({ type: 'chat:send', text: 'Hay quá' }));
-    const watch = await waitFor(red.inbox, (m) => m.type === 'ChatMessage' && m.text === 'Hay quá');
-    assert.equal(watch.senderName, 'Khán giả');
+    const refused = await waitFor(spectator.inbox, (m) => m.type === 'error' && m.code === 'SPECTATOR_CANNOT_CHAT');
+    assert.ok(refused);
+    await sleep(50);
+    assert.equal(red.inbox.filter((m) => m.type === 'ChatMessage' && m.text === 'Hay quá').length, 0);
+    assert.equal(black.inbox.filter((m) => m.type === 'ChatMessage' && m.text === 'Hay quá').length, 0);
   });
 
   test('tin quá dài / rỗng chỉ trả lỗi cho người gửi, không phát cho ai khác', async () => {
-    const [a, b] = await Promise.all([connect(), connect()]);
+    // REV2-08: chỉ người chơi (Đỏ/Đen) mới chat được -> đóng các socket cũ để a, b nhận ghế Đỏ/Đen
+    for (const ws of sockets) ws.close();
+    await sleep(100);
+    const a = await connect();
+    const b = await connect();
     a.ws.send(JSON.stringify({ type: 'chat:send', text: 'z'.repeat(501) }));
     const err = await waitFor(a.inbox, (m) => m.type === 'error');
     assert.equal(err.code, 'MESSAGE_TOO_LONG');

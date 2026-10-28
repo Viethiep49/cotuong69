@@ -15,7 +15,7 @@ export const CHAT_ACK_TIMEOUT_MS = 8000;
 export const MESSAGE_STATUS = { SENDING: 'SENDING', SENT: 'SENT', FAILED: 'FAILED' };
 
 // Mã lỗi server trả khi từ chối tin chat (roomHub và relay trận demo dùng chung)
-export const CHAT_ERROR_CODES = new Set(['EMPTY_MESSAGE', 'MESSAGE_TOO_LONG', 'CHAT_RATE_LIMITED']);
+export const CHAT_ERROR_CODES = new Set(['EMPTY_MESSAGE', 'MESSAGE_TOO_LONG', 'CHAT_RATE_LIMITED', 'SPECTATOR_CANNOT_CHAT']);
 
 export function isChatErrorCode(code) {
   return typeof code === 'string' && CHAT_ERROR_CODES.has(code);

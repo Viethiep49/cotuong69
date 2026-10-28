@@ -812,9 +812,10 @@ class RoomHub {
     // 6. Chat riêng giữa hai người chơi (COT-625)
     if (type === 'chat' || type === 'chat:send') {
       if (isSpectator) {
+        // REV2-08: quyết định chủ dự án — khán giả không được chat (mã lỗi riêng để client hiển thị đúng)
         this.send(socket, {
           type: 'error',
-          code: 'FORBIDDEN',
+          code: 'SPECTATOR_CANNOT_CHAT',
           message: 'Chỉ hai người chơi đang thi đấu mới được sử dụng Chat riêng. Khán giả không có quyền truy cập.',
         });
         return;

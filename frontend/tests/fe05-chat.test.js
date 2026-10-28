@@ -105,7 +105,8 @@ describe('FE-05: phân loại tin chat từ server', () => {
     const { classifyServerMessage } = await importSrc('src/domain/network/signalingMessages.js');
     const chat = { type: 'ChatMessage', id: '1', text: 'x' };
     assert.deepStrictEqual(classifyServerMessage(chat), { kind: 'chat', message: chat });
-    for (const code of ['EMPTY_MESSAGE', 'MESSAGE_TOO_LONG', 'CHAT_RATE_LIMITED']) {
+    // REV2-08: khán giả gửi chat -> SPECTATOR_CANNOT_CHAT cũng là lỗi chat
+    for (const code of ['EMPTY_MESSAGE', 'MESSAGE_TOO_LONG', 'CHAT_RATE_LIMITED', 'SPECTATOR_CANNOT_CHAT']) {
       const routed = classifyServerMessage({ type: 'error', code, message: 'm' }, { movePending: true });
       assert.deepStrictEqual(routed, { kind: 'chat', message: { type: 'ChatError', code, message: 'm' } });
     }
