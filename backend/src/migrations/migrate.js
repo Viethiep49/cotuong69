@@ -59,6 +59,19 @@ async function applyMigration(file, sqlContent) {
     if (postgres) {
       // Chặn 2 process chạy migration cùng lúc
       await client.query('SELECT pg_advisory_xact_lock($1)', [ADVISORY_LOCK_KEY]);
+    }
+
+    // REV-10: kiểm tra lại "đã chạy chưa" SAU khi giữ lock. Kiểm tra ở runMigrations
+    // nằm ngoài lock nên 2 instance cùng thấy "chưa chạy"; instance chờ lock phải
+    // bỏ qua file mà instance kia vừa chạy xong.
+    const done = await client.query('SELECT id FROM migrations_history WHERE name = $1', [file]);
+    if (done.rows && done.rows.length > 0) {
+      await client.query('COMMIT');
+      console.log(`⏩ Bỏ qua ${file} (instance khác vừa chạy xong)`);
+      return;
+    }
+
+    if (postgres) {
       // Postgres chạy được nhiều câu lệnh trong 1 lần query
       await client.query(sqlContent);
     } else {
