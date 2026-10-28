@@ -1445,6 +1445,8 @@ class RoomHub {
    * @param {string} matchId mã ván ĐÃ chốt (không đọc lại room.matchId)
    */
   async persistSettlement(room, matchId, winnerColor, endReason, options) {
+    const redAtSettle = room.players.red;
+    const blackAtSettle = room.players.black;
     const winnerUser = winnerColor ? room.players[winnerColor] : null;
     const loserColor = winnerColor === 'red' ? 'black' : winnerColor === 'black' ? 'red' : null;
     const loserUser = loserColor ? room.players[loserColor] : null;
@@ -1469,6 +1471,9 @@ class RoomHub {
       roomCode: room.code,
       winnerUserId: winnerUser ? winnerUser.id : null,
       loserUserId: loserUser ? loserUser.id : null,
+      // REV2-06: luôn ghi cả hai người chơi (ván hoà / huỷ không có thắng thua)
+      redUserId: redAtSettle ? redAtSettle.id : null,
+      blackUserId: blackAtSettle ? blackAtSettle.id : null,
       winner: winnerColor || null,
       // REV-06: PgPvpMatchRepository.create đọc `winnerColor` (cột winner_color)
       winnerColor: winnerColor || null,
