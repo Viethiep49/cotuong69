@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { CallController } from '../../domain/media/callController';
 import { resolveRtcConfig } from '../../domain/media/iceServers';
 import { WebRtcPeerConnection } from '../../domain/media/webRtcPeerConnection';
@@ -48,7 +48,11 @@ export function useWebRtcCall({
 
   const [snapshot, setSnapshot] = useState(() => controller.getState());
 
-  useEffect(() => {
+  // REV2-13: dùng useLayoutEffect để cleanup (dispose) chạy TRƯỚC cleanup thụ động của useMatch /
+  // useRoomSignaling. Khi unmount, React chạy cleanup layout-effect trước mọi cleanup useEffect;
+  // nếu dùng useEffect thì socket đã bị đóng và socketRef = null trước khi dispose kịp gửi
+  // `call:leave` -> server giữ cuộc gọi treo tới khi socket rớt.
+  useLayoutEffect(() => {
     const unsubscribe = controller.subscribe(setSnapshot);
     setSnapshot(controller.getState());
     return () => {
