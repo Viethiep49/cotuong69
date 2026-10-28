@@ -97,6 +97,11 @@ class RoomHub {
 
     this.setupWss();
 
+    // REV-07: cho sweeper của RoomManager biết phòng nào còn socket đang mở
+    if (this.roomManager && typeof this.roomManager.setLiveSocketChecker === 'function') {
+      this.roomManager.setLiveSocketChecker((code) => this.hasLiveSockets(code));
+    }
+
     if (enableHeartbeat) {
       this.startHeartbeat();
     }
@@ -121,6 +126,16 @@ class RoomHub {
     return ['red', 'black'].some(
       (side) => bySide[side] && Number(bySide[side].disconnectedUserId) === Number(userId),
     );
+  }
+
+  /**
+   * REV-07: phòng còn ít nhất một socket đang mở?
+   * @param {string} code
+   * @returns {boolean}
+   */
+  hasLiveSockets(code) {
+    const group = this.roomGroups.get(code);
+    return Boolean(group && group.size > 0);
   }
 
   setupWss() {
@@ -379,6 +394,10 @@ class RoomHub {
     if (!meta) return;
 
     meta.lastSeen = Date.now();
+
+    // REV-07: mọi message đều tính là hoạt động của phòng (kể cả pong)
+    const activeRoom = this.roomManager.findByCode(meta.roomCode);
+    if (activeRoom && typeof activeRoom.touch === 'function') activeRoom.touch();
 
     let payload;
     try {
@@ -1445,24 +1464,23 @@ class RoomHub {
 
     // 1. Ngoại lệ sự cố hệ thống: Cả hai cùng mất kết nối -> không tự trao thắng, không thay đổi Elo
     if (!hasActiveRed && !hasActiveBlack) {
-      room.status = 'WAITING_OPPONENT';
-      if (room.matchState) {
-        room.matchState.status = 'completed';
-        room.matchState.winner = null;
-        room.matchState.endReason = 'SYSTEM_ERROR';
+      // REV-07: đi qua settleMatch (không Elo, có ghi pvp_matches, clear timer) thay vì
+      // tự set trạng thái rồi return như trước
+      const redPlayer = room.players.red;
+      const blackPlayer = room.players.black;
+      try {
+        await this.settleMatch(room, null, 'SYSTEM_ERROR', {
+          skipElo: true,
+          message: 'Trận đấu bị hủy và không ghi nhận kết quả do sự cố hệ thống khiến cả hai người chơi cùng mất kết nối.',
+        });
+      } catch (err) {
+        console.error('[settleMatch] system error:', err);
       }
-      room.reconnectState = null;
-      this.clearDisconnectTimer(room.code);
 
-      this.broadcastToRoom(room.code, {
-        type: 'matchEnded',
-        winner: null,
-        winnerColor: null,
-        reason: 'SYSTEM_ERROR',
-        endReason: 'SYSTEM_ERROR',
-        message: 'Trận đấu bị hủy và không ghi nhận kết quả do sự cố hệ thống khiến cả hai người chơi cùng mất kết nối.',
-        room: room.getSummary(),
-      });
+      // REV-07: cả hai đã rời -> trả ghế để phòng trống và được sweeper dọn
+      if (redPlayer) room.removeParticipant(redPlayer.id);
+      if (blackPlayer) room.removeParticipant(blackPlayer.id);
+      room.touch();
       return;
     }
 

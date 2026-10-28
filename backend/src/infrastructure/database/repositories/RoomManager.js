@@ -9,6 +9,8 @@ class RoomManager {
   constructor({ sweepIntervalMs = 60 * 1000, maxRoomsPerUser = MAX_ROOMS_PER_USER } = {}) {
     this.rooms = new Map(); // roomCode -> Room
     this.seatReleaseTimers = new Map();
+    // REV-07: hub đăng ký hàm cho biết phòng còn socket đang mở hay không
+    this.liveSocketChecker = null;
     this.maxRoomsPerUser = maxRoomsPerUser;
 
     // BE-08: sweeper dọn phòng bỏ hoang để Map không phình vô hạn
@@ -107,6 +109,23 @@ class RoomManager {
   }
 
   /**
+   * REV-07: hub gọi hàm này để sweeper không xoá phòng còn người đang kết nối.
+   * @param {(code: string) => boolean} checker
+   */
+  setLiveSocketChecker(checker) {
+    this.liveSocketChecker = typeof checker === 'function' ? checker : null;
+  }
+
+  hasLiveSockets(code) {
+    if (!this.liveSocketChecker) return false;
+    try {
+      return Boolean(this.liveSocketChecker(code));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * BE-08: dọn phòng bỏ hoang (không còn ai / đã kết thúc quá lâu).
    * Chỉ dựa trên dữ liệu Room để không phụ thuộc tầng socket.
    */
@@ -121,6 +140,9 @@ class RoomManager {
 
       // Không bao giờ dọn phòng đang thi đấu
       if (room.status === 'PLAYING') continue;
+
+      // REV-07: phòng còn socket đang mở (vd chủ phòng ngồi chờ đối thủ) thì không dọn
+      if (this.hasLiveSockets(code)) continue;
 
       if (isIdle && (isFinished || participantCount === 0)) {
         this.rooms.delete(code);
@@ -150,18 +172,6 @@ class RoomManager {
     const room = this.rooms.get(cleanCode);
     if (!room || room.status === 'CLOSED') return null;
     return room;
-  }
-
-  joinRoom(code, user) {
-    const room = this.findByCode(code);
-    if (!room) {
-      const err = new Error(`Không tìm thấy phòng cờ với mã '${code}'.`);
-      err.code = 'ROOM_NOT_FOUND';
-      err.statusCode = 404;
-      throw err;
-    }
-
-    return room.addParticipant(user);
   }
 
   /**
