@@ -304,6 +304,49 @@ describe('useMatch', () => {
       expect(sockets().length).toBeGreaterThan(1);
     });
 
+    it('REV2-12: `online` khi socket cũ đang CLOSING không mở socket song song; chỉ kết nối lại sau khi nó đóng', async () => {
+      vi.useFakeTimers();
+      const { result } = renderHook(() => useMatch('COT-615'));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      const first = lastSocket();
+      first.open();
+
+      first.readyState = FakeWebSocket.CLOSING; // server đang đóng, close chưa phát
+      act(() => { window.dispatchEvent(new Event('online')); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(sockets()).toHaveLength(1);
+
+      first.drop(1001); // close thật sự -> lên lịch kết nối lại
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(sockets()).toHaveLength(2);
+      lastSocket().open();
+      expect(result.current.socketRef.current).toBe(lastSocket());
+    });
+
+    it('REV2-12: close/error/message muộn của socket cũ bị bỏ qua (không xoá socketRef, không thêm socket)', async () => {
+      vi.useFakeTimers();
+      const { result } = renderHook(() => useMatch('COT-615'));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      const first = lastSocket();
+      first.open();
+      first.drop(1006);
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      const second = lastSocket();
+      expect(second).not.toBe(first);
+      second.open();
+
+      // sự kiện muộn của socket cũ
+      act(() => first.emit('close', { code: 1001 }));
+      act(() => first.emit('error', {}));
+      act(() => first.emit('message', { data: JSON.stringify({ type: 'welcome', color: 'black', state: MATCH }) }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+
+      expect(sockets()).toHaveLength(2);
+      expect(result.current.socketRef.current).toBe(second);
+      expect(result.current.connected).toBe(true);
+      expect(result.current.color).not.toBe('black');
+    });
+
     it('đối thủ rớt mạng -> bật đếm ngược và khoá nước đi; đối thủ quay lại -> mở khoá', async () => {
       const { result } = await renderConnectedMatch();
       lastSocket().receive({ type: 'welcome', color: 'red', state: MATCH });

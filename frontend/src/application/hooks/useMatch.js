@@ -177,17 +177,22 @@ export function useMatch(matchId, { roomCode = null } = {}) {
         setState((current) => ({ ...current, match, loading: false, error: null }));
 
         // FE-06: token gửi qua Sec-WebSocket-Protocol thay vì query string
-        socket = new WebSocket(matchWebSocketUrl(matchId), matchWebSocketProtocols());
-        socketRef.current = socket;
-        socket.addEventListener('open', () => {
-          if (!cancelled) {
+        // REV2-12: mỗi handler gắn với ĐÚNG socket này; sự kiện muộn của socket cũ (đang CLOSING
+        // khi socket mới đã mở) phải bị bỏ qua, nếu không close của socket cũ xoá socketRef của
+        // socket mới và kích hoạt thêm một lần kết nối lại -> socket thứ 3, socket thứ 2 giữ ghế.
+        const ws = new WebSocket(matchWebSocketUrl(matchId), matchWebSocketProtocols());
+        socket = ws;
+        socketRef.current = ws;
+        const isCurrent = () => socketRef.current === ws;
+        ws.addEventListener('open', () => {
+          if (!cancelled && isCurrent()) {
             attempt = 0;
             reconnectManager.handleSelfReconnect();
             setState((current) => ({ ...current, connected: true, error: null }));
           }
         });
-        socket.addEventListener('message', (event) => {
-          if (cancelled) return;
+        ws.addEventListener('message', (event) => {
+          if (cancelled || !isCurrent()) return;
           try {
             const message = JSON.parse(event.data);
             if (message.type === 'reconnectState') {
@@ -321,8 +326,8 @@ export function useMatch(matchId, { roomCode = null } = {}) {
             }));
           }
         });
-        socket.addEventListener('close', (event) => {
-          if (cancelled) return;
+        ws.addEventListener('close', (event) => {
+          if (cancelled || !isCurrent()) return;
           socketRef.current = null;
           pendingRef.current = false;
           // COT-601: Mất kết nối WebSocket -> hiển thị overlay mạng chập chờn
@@ -348,8 +353,8 @@ export function useMatch(matchId, { roomCode = null } = {}) {
           }));
           scheduleRetry();
         });
-        socket.addEventListener('error', () => {
-          if (!cancelled) {
+        ws.addEventListener('error', () => {
+          if (!cancelled && isCurrent()) {
             reconnectManager.handleSelfDisconnect('WS_ERROR');
             setState((current) => ({
               ...current,
@@ -380,7 +385,9 @@ export function useMatch(matchId, { roomCode = null } = {}) {
         reconnectManager.handleSelfReconnect();
         return;
       }
-      if (current && current.readyState === WebSocket.CONNECTING) return;
+      // REV2-12: socket đang CLOSING sắp phát 'close' (sẽ tự lên lịch kết nối lại) -> coi như
+      // CONNECTING, không mở thêm socket song song.
+      if (current && (current.readyState === WebSocket.CONNECTING || current.readyState === WebSocket.CLOSING)) return;
       window.clearTimeout(retryTimeout);
       attempt = 0;
       connect();
