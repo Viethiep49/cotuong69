@@ -237,6 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const floatingChatRoomTitle = document.getElementById('floatingChatRoomTitle');
 
   let activeChatService = null;
+  let unsubscribeChatEvents = null; // FE-05: hàm huỷ đăng ký onChatEvent hiện tại
 
   /**
    * Khởi tạo ứng dụng
@@ -2539,7 +2540,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (activeChatService) {
-      activeChatService.onChatEvent((event) => {
+      // FE-05: setupRoomChat chạy mỗi lần mở phòng -> huỷ listener cũ trước khi đăng ký lại,
+      // nếu không mỗi lần mở lại tin nhắn bị render N lần
+      if (typeof unsubscribeChatEvents === 'function') unsubscribeChatEvents();
+      unsubscribeChatEvents = activeChatService.onChatEvent((event) => {
         if (event.type === 'MESSAGE_ADDED' || event.type === 'MESSAGE_RECEIVED' || event.type === 'MESSAGE_STATUS_UPDATED') {
           renderChatMessages();
         } else if (event.type === 'CHAT_TOGGLED') {

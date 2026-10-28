@@ -13,11 +13,14 @@ const MAX_UNOPENED_ATTEMPTS = 5;
  *
  * @param {string|null} roomCode
  * @param {(message:object)=>void} onMessage
+ * @param {(message:object)=>void} [onChat] FE-05: `ChatMessage` / `ChatError` của khung chat
  */
-export function useRoomSignaling(roomCode, onMessage) {
+export function useRoomSignaling(roomCode, onMessage, onChat) {
   const socketRef = useRef(null);
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
+  const onChatRef = useRef(onChat);
+  onChatRef.current = onChat;
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -60,6 +63,8 @@ export function useRoomSignaling(roomCode, onMessage) {
         const routed = classifyServerMessage(message, { movePending: false });
         if (routed.kind === 'call' && typeof onMessageRef.current === 'function') {
           onMessageRef.current(routed.message);
+        } else if (routed.kind === 'chat' && typeof onChatRef.current === 'function') {
+          onChatRef.current(routed.message);
         }
       });
 

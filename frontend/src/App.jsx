@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import XiangqiBoard from './presentation/components/board/XiangqiBoard';
 import ChatBox from './presentation/components/chat/ChatBox';
+import { sideLabel } from './domain/chat/chatMessages';
 import VideoCallOverlay from './presentation/components/video/VideoCallOverlay';
 import { useMatch } from './application/hooks/useMatch';
 import { useWebRtcCall } from './application/hooks/useWebRtcCall';
@@ -122,6 +123,7 @@ function App() {
     isSignalingReady,
     signalingError,
     setSignalingHandler,
+    subscribeChat,
   } = useMatch(matchId, { roomCode });
 
   const currentUserName = color === 'red' ? match?.players?.red?.name : color === 'black' ? match?.players?.black?.name : 'Khán Giả';
@@ -610,12 +612,15 @@ function App() {
       <ChatBox
         roomId={match.matchCode || matchId}
         currentUser={{
+          // FE-05: tên theo phe (Đỏ/Đen/Khán giả); server sẽ trả tên thật khi ack
           id: color === 'red' ? 'player_red' : color === 'black' ? 'player_black' : 'spectator_user',
-          name: color === 'red' ? match.players.red.name : color === 'black' ? match.players.black.name : 'Khán Giả',
+          name: sideLabel(color),
           avatar: color === 'red' ? '帥' : color === 'black' ? '將' : '観',
         }}
         role={readOnly ? 'SPECTATOR' : color === 'red' ? 'HOST' : 'PLAYER'}
         readOnly={readOnly}
+        onSendMessage={(msg) => sendSignaling({ type: 'chat:send', text: msg.text, clientId: msg.clientId })}
+        subscribeChat={subscribeChat}
       />
     </main>
   );

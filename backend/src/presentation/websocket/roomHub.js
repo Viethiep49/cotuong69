@@ -796,6 +796,10 @@ class RoomHub {
         text: text.trim(),
         timestamp: Date.now(),
       };
+      // FE-05: echo clientId để người gửi nhận ra tin của chính mình (= ack "đã gửi")
+      if (typeof payload.clientId === 'string' && payload.clientId.length <= 64) {
+        chatMsg.clientId = payload.clientId;
+      }
 
       this.broadcastToPlayers(room, chatMsg);
       return;

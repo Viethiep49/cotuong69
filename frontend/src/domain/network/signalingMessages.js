@@ -1,3 +1,5 @@
+import { isChatErrorCode } from '../chat/chatMessages.js';
+
 /**
  * FE-01: phân loại tin nhắn từ server — tách riêng để kiểm thử và dùng chung cho hai kênh
  * (WS trận demo /api/matches/:id/ws và WS roomHub /ws/room/:code).
@@ -16,16 +18,22 @@ export function isCallErrorCode(code) {
 }
 
 /**
- * @returns {{kind:'call', message:object} | {kind:'moveError', error:string} | {kind:'ignore'} | {kind:'other'}}
+ * @returns {{kind:'call', message:object} | {kind:'chat', message:object} | {kind:'moveError', error:string} | {kind:'ignore'} | {kind:'other'}}
  *  - call: chuyển cho CallController (lỗi của cuộc gọi được đổi thành `CallError`)
+ *  - chat (FE-05): `ChatMessage` và lỗi chat (EMPTY_MESSAGE / MESSAGE_TOO_LONG / CHAT_RATE_LIMITED
+ *    -> `ChatError`) chuyển cho khung chat, không thành lỗi nước đi
  *  - moveError: lỗi chung CHỈ hiện như lỗi nước đi khi đang có nước đi chờ phản hồi
  *    (trước đây mọi `error` đều thành "moveError", kể cả lỗi của cuộc gọi)
  */
 export function classifyServerMessage(message, { movePending = false } = {}) {
   const type = message && message.type;
   if (CALL_MESSAGE_TYPES.has(type)) return { kind: 'call', message };
+  if (type === 'ChatMessage') return { kind: 'chat', message };
   if (type === 'error') {
     const text = message.message || message.error;
+    if (isChatErrorCode(message.code)) {
+      return { kind: 'chat', message: { type: 'ChatError', code: message.code, message: text } };
+    }
     if (isCallErrorCode(message.code)) {
       return { kind: 'call', message: { type: 'CallError', code: message.code, message: text } };
     }

@@ -18,6 +18,7 @@ const { createRoomHandler } = require('./presentation/http/routes/room.routes');
 const { createFriendsHandler } = require('./presentation/http/routes/friends.routes');
 const { roomHub: defaultRoomHub, WS_SUBPROTOCOL } = require('./presentation/websocket/roomHub');
 const { DemoCallRelay, isCallMessageType } = require('./presentation/websocket/demoCallRelay');
+const { DemoChatRelay, isChatMessageType } = require('./presentation/websocket/demoChatRelay');
 const { getClientIp, roomLookupLimiter } = require('./presentation/http/middlewares/rateLimiter');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -234,6 +235,9 @@ function createServer(options = {}) {
     send,
   });
 
+  // FE-05: relay chat:send tới mọi người trong trận demo (kể cả khán giả)
+  const chatRelay = new DemoChatRelay({ listClients: () => clients.keys(), send });
+
   function assignColor() {
     const occupied = new Set([...clients.values()].filter(Boolean));
     return ['red', 'black'].find((color) => !occupied.has(color)) || null;
@@ -251,6 +255,12 @@ function createServer(options = {}) {
     // FE-01: tín hiệu WebRTC đi qua socket trận demo
     if (isCallMessageType(message?.type)) {
       callRelay.handle(client, clients.get(client) || null, message);
+      return;
+    }
+
+    // FE-05: chat văn bản đi qua socket trận demo
+    if (isChatMessageType(message?.type)) {
+      chatRelay.handle(client, clients.get(client) || null, message);
       return;
     }
 
@@ -360,6 +370,7 @@ function createServer(options = {}) {
     client.on('close', () => {
       const seat = clients.get(client);
       clients.delete(client);
+      chatRelay.forget(client);
       callRelay.handleSeatLeft(seat); // FE-01: người trong cuộc gọi rớt -> báo bên còn lại
       broadcastState();
     });

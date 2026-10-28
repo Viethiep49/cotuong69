@@ -19,15 +19,28 @@ const MESSAGE_STATUS = {
 const MAX_MESSAGE_LENGTH = 255;
 
 class ChatService {
+  static normalizeUser(user) {
+    const source = user || {};
+    const name = source.displayName || source.username || source.name || 'Khách';
+    return {
+      id: source.id !== undefined && source.id !== null ? source.id : 'guest',
+      name,
+      avatar: source.avatar || String(name).slice(0, 1),
+      role: source.role || CHAT_ROLES.SPECTATOR
+    };
+  }
+
   constructor(options = {}) {
     this.roomId = options.roomId || 'room-default';
     // REV-16: không còn user hardcode; mặc định là khách (SPECTATOR -> không được chat)
-    this.currentUser = options.currentUser || {
-      id: 'guest',
-      name: 'Khách',
-      avatar: '客',
-      role: CHAT_ROLES.SPECTATOR
-    };
+    // FE-05: luôn làm việc trên BẢN SAO { id, name, avatar, role } — user từ API có displayName/username
+    // chứ không có `name` nên trước đây `currentUser.name.slice` ném TypeError; bản sao cũng không
+    // làm đổi đối tượng của người gọi khi setRole.
+    this.currentUser = ChatService.normalizeUser(options.currentUser);
+    // FE-05: transport tuỳ chọn { send(message) -> Promise }. Có transport thì "SENT" chỉ đặt khi
+    // transport resolve (ack thật), reject -> FAILED. Không có (lobby cũ chưa có kênh realtime) thì
+    // giữ hành vi cục bộ cũ để không vỡ giao diện; chat thật nằm ở màn hình trận React.
+    this.transport = options.transport && typeof options.transport.send === 'function' ? options.transport : null;
     this.messages = [];
     this.listeners = [];
     this.maxCharacters = MAX_MESSAGE_LENGTH;
@@ -147,7 +160,18 @@ class ChatService {
     this.messages.push(newMessage);
     this._notifyListeners({ type: 'MESSAGE_ADDED', message: newMessage, autoScroll: true });
 
-    // Giả lập gửi realtime qua WebSocket / Socket.IO
+    if (this.transport) {
+      try {
+        await this.transport.send(newMessage);
+        newMessage.status = MESSAGE_STATUS.SENT;
+      } catch (err) {
+        newMessage.status = MESSAGE_STATUS.FAILED;
+      }
+      this._notifyListeners({ type: 'MESSAGE_STATUS_UPDATED', message: newMessage });
+      return newMessage;
+    }
+
+    // Không có transport: giữ giả lập cục bộ cũ (xem chú thích ở constructor)
     return new Promise((resolve) => {
       setTimeout(() => {
         newMessage.status = MESSAGE_STATUS.SENT;

@@ -91,7 +91,14 @@ export function useMatch(matchId, { roomCode = null } = {}) {
       signalingHandlerRef.current(message);
     }
   }, []);
-  const roomSignaling = useRoomSignaling(roomCode, deliverSignaling);
+  // FE-05: tin chat (ChatMessage / ChatError) đi cùng hai kênh với signaling cuộc gọi
+  const chatHandlerRef = useRef(null);
+  const deliverChat = useCallback((message) => {
+    if (typeof chatHandlerRef.current === 'function') {
+      chatHandlerRef.current(message);
+    }
+  }, []);
+  const roomSignaling = useRoomSignaling(roomCode, deliverSignaling, deliverChat);
   const roomCodeRef = useRef(roomCode);
   roomCodeRef.current = roomCode;
   // FE-08: sự kiện `online` của trình duyệt gọi hàm này để kết nối lại NGAY (không chờ backoff)
@@ -283,12 +290,15 @@ export function useMatch(matchId, { roomCode = null } = {}) {
                   match,
                 };
               });
-            } else if (message.type === 'error' || classifyServerMessage(message).kind === 'call') {
+            } else if (message.type === 'error' || ['call', 'chat'].includes(classifyServerMessage(message).kind)) {
               // FE-01: gói Call* và lỗi của cuộc gọi đi tới CallController (COT-629);
+              // FE-05: ChatMessage và lỗi chat đi tới khung chat;
               // lỗi chung chỉ thành moveError khi đang có nước đi chờ phản hồi.
               const routed = classifyServerMessage(message, { movePending: pendingRef.current });
               if (routed.kind === 'call') {
                 deliverSignaling(routed.message);
+              } else if (routed.kind === 'chat') {
+                deliverChat(routed.message);
               } else if (routed.kind === 'moveError') {
                 pendingRef.current = false;
                 setState((current) => ({ ...current, movePending: false, moveError: routed.error }));
@@ -450,6 +460,14 @@ export function useMatch(matchId, { roomCode = null } = {}) {
     signalingHandlerRef.current = handler;
   }, []);
 
+  // FE-05: khung chat đăng ký nhận tin; trả về hàm huỷ đăng ký
+  const subscribeChat = useCallback((handler) => {
+    chatHandlerRef.current = handler;
+    return () => {
+      if (chatHandlerRef.current === handler) chatHandlerRef.current = null;
+    };
+  }, []);
+
   return {
     ...state,
     socketRef,
@@ -459,6 +477,7 @@ export function useMatch(matchId, { roomCode = null } = {}) {
     isSignalingReady,
     signalingError: roomCode ? roomSignaling.error : null,
     setSignalingHandler,
+    subscribeChat,
     reconnectState,
     reconnectManager,
     simulateSelfDisconnect,
