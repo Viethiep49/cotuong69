@@ -161,6 +161,8 @@ class Room {
 
   removeParticipant(userId) {
     const uid = Number(userId);
+    // REV-17: người rời đi không được để lại trạng thái "sẵn sàng"
+    this.readyStates.delete(uid);
     if (this.players.red && this.players.red.id === uid) {
       this.players.red = null;
     } else if (this.players.black && this.players.black.id === uid) {

@@ -1,6 +1,9 @@
 const { roomManager: defaultRoomManager } = require('../../../infrastructure/database/repositories/RoomManager');
 const PgUserRepository = require('../../../infrastructure/database/repositories/PgUserRepository');
 
+// Cửa sổ chống request tạo phòng lặp
+const RECENT_REQUEST_TTL_MS = 3000;
+
 class CreateRoomUseCase {
   constructor({
     roomManager = defaultRoomManager,
@@ -9,6 +12,16 @@ class CreateRoomUseCase {
     this.roomManager = roomManager;
     this.userRepository = userRepository;
     this.recentRequests = new Map(); // key -> { timestamp, result }
+  }
+
+  /**
+   * REV-17: dọn các entry chống tạo phòng lặp đã quá hạn để Map không phình mãi.
+   * Được gọi mỗi lần execute nên Map chỉ giữ các entry trong cửa sổ chống lặp.
+   */
+  pruneRecentRequests(now = Date.now()) {
+    for (const [key, entry] of this.recentRequests) {
+      if (now - entry.timestamp >= RECENT_REQUEST_TTL_MS) this.recentRequests.delete(key);
+    }
   }
 
   async execute(userId, { name, isPrivate = false, maxSpectators = 10, baseUrl = '', requestId = null } = {}) {
@@ -28,10 +41,15 @@ class CreateRoomUseCase {
 
     // Chống request tạo Room lặp: Bấm nhiều lần chỉ sinh một phòng duy nhất
     const now = Date.now();
-    const idempotencyKey = requestId || `${userId}:${name.trim()}:${Boolean(isPrivate)}`;
+    this.pruneRecentRequests(now);
+    // REV-17: key luôn gắn với userId — requestId do client gửi, nếu dùng trần thì
+    // user B gửi trùng requestId của user A sẽ nhận lại kết quả (phòng, link mời) của A.
+    const idempotencyKey = requestId
+      ? `${userId}:${requestId}`
+      : `${userId}:${name.trim()}:${Boolean(isPrivate)}`;
     if (this.recentRequests.has(idempotencyKey)) {
       const cached = this.recentRequests.get(idempotencyKey);
-      if (now - cached.timestamp < 3000) {
+      if (now - cached.timestamp < RECENT_REQUEST_TTL_MS) {
         return cached.result;
       }
     }

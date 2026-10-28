@@ -103,6 +103,17 @@ class RoomHub {
       this.roomManager.setLiveSocketChecker((code) => this.hasLiveSockets(code));
     }
 
+    // REV-17: ghế giữ qua HTTP bị giải phóng -> báo cho những người còn trong phòng
+    if (this.roomManager && typeof this.roomManager.setSeatReleasedListener === 'function') {
+      this.roomManager.setSeatReleasedListener(({ room, userId }) => {
+        this.broadcastToRoom(room.code, {
+          type: 'UserLeft',
+          userId,
+          room: room.getSummary(),
+        });
+      });
+    }
+
     if (enableHeartbeat) {
       this.startHeartbeat();
     }

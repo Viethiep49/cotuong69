@@ -11,6 +11,8 @@ class RoomManager {
     this.seatReleaseTimers = new Map();
     // REV-07: hub đăng ký hàm cho biết phòng còn socket đang mở hay không
     this.liveSocketChecker = null;
+    // REV-17: hub đăng ký callback để broadcast khi ghế giữ qua HTTP bị giải phóng
+    this.seatReleasedListener = null;
     this.maxRoomsPerUser = maxRoomsPerUser;
 
     // BE-08: sweeper dọn phòng bỏ hoang để Map không phình vô hạn
@@ -114,6 +116,14 @@ class RoomManager {
    */
   setLiveSocketChecker(checker) {
     this.liveSocketChecker = typeof checker === 'function' ? checker : null;
+  }
+
+  /**
+   * REV-17: callback ({ room, userId }) gọi sau khi ghế giữ qua HTTP bị giải phóng.
+   * @param {(info: {room: object, userId: number}) => void} listener
+   */
+  setSeatReleasedListener(listener) {
+    this.seatReleasedListener = typeof listener === 'function' ? listener : null;
   }
 
   hasLiveSockets(code) {
@@ -225,7 +235,15 @@ class RoomManager {
       if (target.status === 'PLAYING') return;
       const role = target.getParticipantRole(Number(user.id));
       if (role && role.role === 'PLAYER') {
+        // removeParticipant cũng xoá readyStates của user (REV-17)
         target.removeParticipant(Number(user.id));
+        if (this.seatReleasedListener) {
+          try {
+            this.seatReleasedListener({ room: target, userId: Number(user.id) });
+          } catch {
+            // listener lỗi không được làm hỏng timer
+          }
+        }
       }
     }, Math.max(1000, Number(ttlMs) || 30000));
 
