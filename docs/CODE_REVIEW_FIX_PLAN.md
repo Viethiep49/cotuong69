@@ -569,7 +569,7 @@ Ký hiệu: `[x]` đạt · `[~]` đã làm nhưng còn thiếu, phần thiếu 
 - [x] REV-11 · [x] REV-12 · [x] REV-13 · [x] REV-14 · [x] REV-15 · [x] REV-16 · [x] REV-17 · [x] REV-18 · [x] REV-19
 
 **Còn lại của plan gốc (làm sau Phase 4):**
-- [ ] FE-06 · [ ] FE-08 · [ ] FE-07 · [ ] FE-01 · [ ] FE-05 · [ ] FE-10
+- [x] FE-06 · [x] FE-08 · [x] FE-07 · [x] FE-01 · [ ] FE-05 · [ ] FE-10
 - [ ] CLEAN-01 · [ ] CLEAN-02 · [ ] CLEAN-03 · [ ] CLEAN-04
 
 **Lưu ý vận hành**: vì secret JWT mặc định đã công khai trong source, sau khi xong SEC-02 phải đặt `JWT_SECRET` mới trên mọi môi trường (mọi token cũ sẽ mất hiệu lực — đây là điều mong muốn). Nếu repo GitHub từng public hoặc có PR từ fork chạy qua workflow `ai-pr-test.yml`, hãy **xoay vòng (rotate) `JIRA_API_TOKEN` và `GEMINI_API_KEY`**.
