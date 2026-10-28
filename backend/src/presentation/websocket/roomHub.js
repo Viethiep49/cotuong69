@@ -318,6 +318,19 @@ class RoomHub {
         this.roomManager.confirmSeat(room.code, userId);
       }
 
+      // REV2-02: bên kia đã hết cửa sổ reconnect từ trước và đang chờ người này -> người này
+      // vừa quay lại kịp thì thắng DISCONNECT_TIMEOUT (socket đã đăng ký ở trên nên hàm
+      // handleDisconnectTimeout thấy bên này đang online).
+      if (isReconnectingPlayer && room.reconnectState && room.reconnectState.bySide) {
+        for (const expiredSide of ['red', 'black']) {
+          const st = room.reconnectState && room.reconnectState.bySide[expiredSide];
+          if (st && st.expired) {
+            this.handleDisconnectTimeout(room, st.disconnectedUserId, expiredSide.toUpperCase())
+              .catch((err) => console.error('[handleDisconnectTimeout] expired:', err));
+          }
+        }
+      }
+
       // BE-09: đánh dấu user đang IN_GAME để mời bạn bè hoạt động đúng
       if (this.onlineUserManager) {
         this.onlineUserManager.setOnline(userId, 'IN_GAME');
@@ -1566,6 +1579,21 @@ class RoomHub {
       const m = this.clients.get(s);
       return m && m.roomCode === room.code;
     });
+
+    // REV2-02: bên kia cũng đang vắng nhưng CÒN trong cửa sổ reconnect của chính họ
+    // (timer của họ vẫn chạy) -> chưa huỷ ván. Đánh dấu cửa sổ bên này đã hết hạn rồi chờ:
+    //  - bên kia quay lại kịp -> setupWss gọi lại hàm này cho bên đã hết hạn => bên kia thắng
+    //  - bên kia cũng hết hạn -> nhánh SYSTEM_ERROR bên dưới
+    if (!hasActiveRed && !hasActiveBlack && sideState) {
+      const otherSide = timeoutSide === 'red' ? 'black' : 'red';
+      const otherState = room.reconnectState && room.reconnectState.bySide
+        ? room.reconnectState.bySide[otherSide]
+        : null;
+      if (otherState && this.disconnectTimers.has(`${room.code}:${otherSide}`)) {
+        sideState.expired = true;
+        return;
+      }
+    }
 
     // 1. Ngoại lệ sự cố hệ thống: Cả hai cùng mất kết nối -> không tự trao thắng, không thay đổi Elo
     if (!hasActiveRed && !hasActiveBlack) {

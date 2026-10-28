@@ -306,8 +306,13 @@ describe('Nghiệm thu Task COT-595: [2.4] [BE] Bộ đếm thời gian Timer 60
 
       await new Promise((r) => setTimeout(r, 50));
 
-      // Kích hoạt timeout khi cả 2 đều không còn kết nối
+      // Kích hoạt timeout khi cả 2 đều không còn kết nối.
+      // REV2-02: cửa sổ của Đỏ hết trước thì phải CHỜ (Đen còn trong cửa sổ của mình);
+      // chỉ khi cửa sổ của Đen cũng hết mới huỷ ván SYSTEM_ERROR.
       await roomHub.handleDisconnectTimeout(testRoom, hostUser.id, 'RED');
+      roomHub.clearDisconnectTimer(testRoom.code, 'RED');
+      roomHub.clearDisconnectTimer(testRoom.code, 'BLACK');
+      await roomHub.handleDisconnectTimeout(testRoom, opponentUser.id, 'BLACK');
 
       // Khán giả nhận thông báo SYSTEM_ERROR
       const endedMsg = await waitForMessage(spec.messages, 'matchEnded');
