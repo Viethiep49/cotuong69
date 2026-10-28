@@ -3,6 +3,19 @@ const PgOAuthRepository = require('../../infrastructure/database/repositories/Pg
 const OAuthVerifierService = require('../services/oauthService');
 const defaultDb = require('../../config/db');
 const { generateAccessToken } = require('../services/tokenService');
+const { sanitizeRedirectUrl } = require('./loginUser');
+const { validateDisplayName } = require('../../domain/validators/profileValidator');
+
+/**
+ * REV-15: tên hiển thị lấy từ Google phải qua validateDisplayName; không hợp lệ
+ * thì dùng phần trước "@" của email.
+ */
+function resolveDisplayName(profile) {
+  const result = validateDisplayName(profile.name);
+  if (result.isValid) return result.cleanName;
+  const localPart = String(profile.email || '').split('@')[0].replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return localPart.slice(0, 50) || 'player';
+}
 
 class OAuthLoginUseCase {
   constructor({
@@ -92,7 +105,8 @@ class OAuthLoginUseCase {
         avatarUrl: user.avatarUrl,
         status: user.status,
       },
-      redirectUrl: redirectUrl && typeof redirectUrl === 'string' ? redirectUrl.trim() : null,
+      // REV-15: chặn open-redirect giống đăng nhập thường
+      redirectUrl: sanitizeRedirectUrl(redirectUrl),
     };
   }
 
@@ -121,7 +135,7 @@ class OAuthLoginUseCase {
 
       const created = await txUserRepo.create({
         username: candidateUsername,
-        displayName: profile.name || candidateUsername,
+        displayName: resolveDisplayName(profile),
         email: profile.email,
         passwordHash: null,
         eloRating: 1000,
@@ -158,7 +172,7 @@ class OAuthLoginUseCase {
 
     const created = await this.userRepository.create({
       username: candidateUsername,
-      displayName: profile.name || candidateUsername,
+      displayName: resolveDisplayName(profile),
       email: profile.email,
       passwordHash: null,
       eloRating: 1000,

@@ -151,7 +151,7 @@ describe('Nghiệm thu Task COT-572: Đăng nhập hệ thống và tạo JWT To
           });
         },
         (err) => {
-          assert.equal(err.code, 'ACCOUNT_INACTIVE');
+          assert.equal(err.code, 'INVALID_CREDENTIALS');  // REV-15: không lộ trạng thái khoá tài khoản
           return true;
         }
       );

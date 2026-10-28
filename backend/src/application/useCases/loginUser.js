@@ -12,6 +12,8 @@ function sanitizeRedirectUrl(redirectUrl) {
   if (!redirectUrl || typeof redirectUrl !== 'string') return null;
   const trimmed = redirectUrl.trim();
   if (!trimmed) return null;
+  // REV-15: trình duyệt bỏ tab/xuống dòng khi parse URL nên "/	/evil.com" thành "//evil.com"
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null;
   if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) return null;
   return trimmed;
 }
@@ -86,9 +88,11 @@ class LoginUserUseCase {
       throw err;
     }
 
+    // REV-15: tài khoản không ACTIVE trả CÙNG thông báo/mã với sai mật khẩu để không lộ
+    // trạng thái tài khoản cho người chỉ đoán được mật khẩu.
     if (user.status !== 'ACTIVE') {
-      const err = new Error('Tài khoản của bạn đã bị khóa hoặc chưa được kích hoạt.');
-      err.code = 'ACCOUNT_INACTIVE';
+      const err = new Error(GENERIC_AUTH_ERROR);
+      err.code = 'INVALID_CREDENTIALS';
       throw err;
     }
 
@@ -117,3 +121,4 @@ class LoginUserUseCase {
 }
 
 module.exports = LoginUserUseCase;
+module.exports.sanitizeRedirectUrl = sanitizeRedirectUrl;
