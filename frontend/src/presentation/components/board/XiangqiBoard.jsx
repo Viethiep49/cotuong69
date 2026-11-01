@@ -374,7 +374,7 @@ export default function XiangqiBoard({
   }
 
   return (
-    <div className="xiangqi-board-frame">
+    <div className={`xiangqi-board-frame${readOnly ? ' is-readonly' : ''}`}>
       <div className="board-coordinate coordinate-top">
         {coordinates.map((file) => <span key={file}>{file}</span>)}
       </div>
@@ -503,6 +503,22 @@ export default function XiangqiBoard({
             />
           ))}
         </g>
+        {/* Vẽ TRƯỚC lớp nước đi hợp lệ để dấu ăn quân luôn nằm trên dấu nước đi gần nhất */}
+        {lastMoveFromPoint && lastMoveToPoint && (
+          <g
+            className={`last-move-marker last-move-${lastMove.color || 'red'}${legalDestinations.includes(lastMove.to) ? ' is-recapture' : ''}`}
+            aria-label={`Nước đi gần nhất: ${lastMove.from} đến ${lastMove.to}`}
+          >
+            <path
+              className="last-move-origin"
+              d={getCornerPath(lastMoveFromPoint, 31, 18)}
+            />
+            <path
+              className="last-move-destination"
+              d={getCornerPath(lastMoveToPoint, 36, 20)}
+            />
+          </g>
+        )}
         {legalDestinations.length > 0 && (
           <g className="legal-move-layer" aria-label="Các vị trí có thể đi">
             {legalDestinations.map((destination) => {
@@ -523,10 +539,7 @@ export default function XiangqiBoard({
                 >
                   <circle className="legal-move-hit-area" r="25" />
                   {targetPiece ? (
-                    <>
-                      <circle className="legal-move-capture-ring" r="33" />
-                      <path d={getCornerPath({ x: 0, y: 0 }, 37, 11)} />
-                    </>
+                    <circle className="legal-move-capture-ring" r="30" />
                   ) : (
                     <>
                       <circle className="legal-move-target-ring" r="18" />
@@ -537,21 +550,6 @@ export default function XiangqiBoard({
                 </g>
               );
             })}
-          </g>
-        )}
-        {lastMoveFromPoint && lastMoveToPoint && (
-          <g
-            className={`last-move-marker last-move-${lastMove.color || 'red'}`}
-            aria-label={`Nước đi gần nhất: ${lastMove.from} đến ${lastMove.to}`}
-          >
-            <path
-              className="last-move-origin"
-              d={getCornerPath(lastMoveFromPoint, 31, 18)}
-            />
-            <path
-              className="last-move-destination"
-              d={getCornerPath(lastMoveToPoint, 36, 20)}
-            />
           </g>
         )}
         {interactive && selectedPoint && (

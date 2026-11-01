@@ -210,18 +210,13 @@
   filter: drop-shadow(0 1px 1.5px rgba(70, 25, 15, .45));
 }
 
-/* Ô có quân đối phương: vòng đỏ + bốn góc ngắm */
+/* Ô có quân đối phương: vòng đỏ tròn nằm trên mặt quân. Khác hẳn hình góc vuông của dấu nước đi gần nhất
+   (hình dạng, không chỉ màu, để người khó phân biệt màu vẫn nhận ra). */
 .legal-move-capture-ring {
-  fill: rgba(192, 57, 43, .1);
+  fill: rgba(192, 57, 43, .18);
   stroke: var(--board-accent);
-  stroke-width: 3.5;
-}
-
-.legal-move-marker.is-capture-target path {
-  fill: none;
-  stroke: var(--board-accent);
-  stroke-width: 4;
-  stroke-linecap: square;
+  stroke-width: 4.5;
+  filter: drop-shadow(0 0 1.5px #fffaf0);
 }
 
 .last-move-origin,
@@ -243,6 +238,9 @@
   stroke-width: 5.5;
   filter: drop-shadow(0 0 2px rgba(255, 250, 240, .95));
 }
+
+/* Nước vừa đi đang là điểm có thể bị ăn: mờ dấu góc để vòng ăn quân nổi lên */
+.last-move-marker.is-recapture .last-move-destination { opacity: .3; }
 
 @keyframes selection-ring-spin {
   to { transform: rotate(360deg); }
@@ -413,8 +411,9 @@
 
 .board-readonly-tag {
   position: absolute;
-  top: -30px;
-  right: 0;
+  bottom: -22px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -472,6 +471,8 @@
   from { transform: scale(1.2); opacity: .3; }
   to { transform: scale(1); opacity: 1; }
 }
+
+.xiangqi-board-frame.is-readonly { margin-bottom: 30px; }
 
 @media (prefers-reduced-motion: reduce) {
   .countdown-number, .xiangqi-piece, .selection-energy-ring, .legal-move-glow, .check-highlight-layer circle,

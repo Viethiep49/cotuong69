@@ -390,3 +390,53 @@ describe('XiangqiBoard: đi quân bằng click', () => {
     );
   });
 });
+
+describe('XiangqiBoard: dấu ăn quân và dấu nước đi gần nhất không đè nhau', () => {
+  const captureProps = {
+    legalMoves: { from: 'b2', destinations: ['b9', 'b3'] }, // b9: quân Đen (ăn được), b3: ô trống
+  };
+
+  it('dấu ăn quân là vòng tròn riêng (không còn hình góc vuông như dấu nước đi gần nhất)', () => {
+    const { clickAt, container } = renderBoard(captureProps);
+    clickAt('b2');
+    const capture = container.querySelector('[data-destination="b9"]');
+    expect(capture).toHaveClass('legal-move-marker', 'is-capture-target');
+    expect(capture.querySelector('circle.legal-move-capture-ring')).toBeInTheDocument();
+    expect(capture.querySelector('path')).toBeNull();
+    // ô trống vẫn là chấm đỏ
+    const quiet = container.querySelector('[data-destination="b3"]');
+    expect(quiet).not.toHaveClass('is-capture-target');
+    expect(quiet.querySelector('.legal-move-dot')).toBeInTheDocument();
+    expect(quiet.querySelector('.legal-move-capture-ring')).toBeNull();
+  });
+
+  it('dấu nước đi gần nhất vẽ TRƯỚC lớp nước hợp lệ (dấu ăn quân nằm trên), bấm xuyên qua dấu góc', () => {
+    const { clickAt, container } = renderBoard({ ...captureProps, lastMove: { from: 'b7', to: 'b9', color: 'black' } });
+    clickAt('b2');
+    const lastMove = container.querySelector('.last-move-marker');
+    const legalLayer = container.querySelector('.legal-move-layer');
+    expect(lastMove).toBeInTheDocument();
+    expect(legalLayer).toBeInTheDocument();
+    // lastMove đứng trước legalLayer trong thứ tự tài liệu (=> vẽ dưới)
+    expect(lastMove.compareDocumentPosition(legalLayer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelector('.pieces-layer').compareDocumentPosition(lastMove) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('nước vừa đi đang là điểm có thể bị ăn: dấu góc được đánh dấu is-recapture để mờ đi; ngược lại thì không', () => {
+    const recapture = renderBoard({ ...captureProps, lastMove: { from: 'b7', to: 'b9', color: 'black' } });
+    recapture.clickAt('b2');
+    expect(recapture.container.querySelector('.last-move-marker')).toHaveClass('is-recapture');
+    expect(recapture.container.querySelector('[data-destination="b9"] .legal-move-capture-ring')).toBeInTheDocument();
+    recapture.unmount();
+
+    const other = renderBoard({ ...captureProps, lastMove: { from: 'a6', to: 'a5', color: 'black' } });
+    other.clickAt('b2');
+    expect(other.container.querySelector('.last-move-marker')).not.toHaveClass('is-recapture');
+  });
+
+  it('chưa chọn quân (không có ô hợp lệ): dấu nước đi gần nhất không bị đánh dấu is-recapture', () => {
+    const { container } = renderBoard({ ...captureProps, lastMove: { from: 'b7', to: 'b9', color: 'black' } });
+    expect(container.querySelector('.last-move-marker')).not.toHaveClass('is-recapture');
+  });
+});
+
