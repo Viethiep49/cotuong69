@@ -387,46 +387,35 @@ export default function XiangqiBoard({
       >
         <defs>
           <linearGradient id="board-wood" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#644126" />
-            <stop offset="17%" stopColor="#bd8a51" />
-            <stop offset="40%" stopColor="#87552e" />
-            <stop offset="65%" stopColor="#d0a064" />
-            <stop offset="83%" stopColor="#94643a" />
-            <stop offset="100%" stopColor="#55351f" />
+            <stop offset="0%" stopColor="#c99b62" />
+            <stop offset="30%" stopColor="#dbb680" />
+            <stop offset="55%" stopColor="#c4955a" />
+            <stop offset="80%" stopColor="#d6b07a" />
+            <stop offset="100%" stopColor="#b88a52" />
           </linearGradient>
           <pattern id="wood-grain" width="180" height="112" patternUnits="userSpaceOnUse">
-            <path d="M -20 19 C 24 4 54 31 96 17 S 156 7 202 22 M -18 53 C 22 39 58 64 103 49 S 158 43 198 56 M -16 88 C 28 72 67 99 112 83 S 163 77 199 91" fill="none" stroke="#f1cf9a" strokeOpacity=".26" strokeWidth="1.4" />
-            <path d="M -20 34 C 24 20 54 46 96 32 S 156 22 202 37 M -18 70 C 22 56 58 81 103 66 S 158 60 198 73" fill="none" stroke="#4c2c19" strokeOpacity=".22" strokeWidth="1" />
+            <path d="M -20 19 C 24 4 54 31 96 17 S 156 7 202 22 M -18 53 C 22 39 58 64 103 49 S 158 43 198 56 M -16 88 C 28 72 67 99 112 83 S 163 77 199 91" fill="none" stroke="#f6e5c2" strokeOpacity=".4" strokeWidth="1.4" />
+            <path d="M -20 34 C 24 20 54 46 96 32 S 156 22 202 37 M -18 70 C 22 56 58 81 103 66 S 158 60 198 73" fill="none" stroke="#7a4f27" strokeOpacity=".2" strokeWidth="1" />
           </pattern>
           <linearGradient id="board-paper" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#eee0bf" />
-            <stop offset="48%" stopColor="#e4d0a8" />
-            <stop offset="100%" stopColor="#dcc497" />
+            <stop offset="0%" stopColor="#f2e2c0" />
+            <stop offset="48%" stopColor="#ecd9b6" />
+            <stop offset="100%" stopColor="#e6d0a6" />
           </linearGradient>
-          <radialGradient id="piece-ivory" cx=".29" cy=".2" r=".88">
-            <stop offset="0%" stopColor="#fffef5" />
-            <stop offset="43%" stopColor="#f3e5ca" />
-            <stop offset="78%" stopColor="#dfcaa3" />
-            <stop offset="100%" stopColor="#bca27b" />
+          <radialGradient id="piece-ivory" cx=".32" cy=".24" r=".85">
+            <stop offset="0%" stopColor="#fffef9" />
+            <stop offset="52%" stopColor="#fbf2de" />
+            <stop offset="100%" stopColor="#ecdcb9" />
           </radialGradient>
           <linearGradient id="piece-bronze" x1="0" y1="0" x2="0.85" y2="1">
-            <stop offset="0%" stopColor="#f6dba5" />
-            <stop offset="25%" stopColor="#a47543" />
-            <stop offset="52%" stopColor="#f1d29a" />
-            <stop offset="100%" stopColor="#62401f" />
+            <stop offset="0%" stopColor="#fff3d6" />
+            <stop offset="50%" stopColor="#c9a56c" />
+            <stop offset="100%" stopColor="#8a6a3b" />
           </linearGradient>
           <linearGradient id="piece-bevel" x1="0" y1="0" x2="0.8" y2="1">
-            <stop offset="0%" stopColor="#fff0cf" />
-            <stop offset="55%" stopColor="#cfb486" />
-            <stop offset="100%" stopColor="#8f7049" />
-          </linearGradient>
-          <linearGradient id="piece-red-ink" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#c84d3f" />
-            <stop offset="100%" stopColor="#8f2e27" />
-          </linearGradient>
-          <linearGradient id="piece-black-ink" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#51534d" />
-            <stop offset="100%" stopColor="#282b28" />
+            <stop offset="0%" stopColor="#fffaf0" />
+            <stop offset="55%" stopColor="#e2cfa6" />
+            <stop offset="100%" stopColor="#b79a68" />
           </linearGradient>
           <filter id="board-grain">
             <feTurbulence type="fractalNoise" baseFrequency=".7" numOctaves="2" seed="7" />
@@ -534,7 +523,10 @@ export default function XiangqiBoard({
                 >
                   <circle className="legal-move-hit-area" r="25" />
                   {targetPiece ? (
-                    <path d={getCornerPath({ x: 0, y: 0 }, 35, 10)} />
+                    <>
+                      <circle className="legal-move-capture-ring" r="33" />
+                      <path d={getCornerPath({ x: 0, y: 0 }, 37, 11)} />
+                    </>
                   ) : (
                     <>
                       <circle className="legal-move-target-ring" r="18" />
