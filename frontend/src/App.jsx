@@ -3,11 +3,15 @@ import XiangqiBoard from './presentation/components/board/XiangqiBoard';
 import ChatBox from './presentation/components/chat/ChatBox';
 import { sideLabel } from './domain/chat/chatMessages';
 import VideoCallOverlay from './presentation/components/video/VideoCallOverlay';
+import MoveList from './presentation/components/match/MoveList';
 import { useMatch } from './application/hooks/useMatch';
+import { useMoveHistory } from './application/hooks/useMoveHistory';
 import { useWebRtcCall } from './application/hooks/useWebRtcCall';
 import { parseRoomCodeParam } from './domain/network/roomCodeParam';
 import { BoardSyncManager } from './domain/game/boardSyncManager';
+import { getTotalPly } from './domain/game/moveHistory';
 import { moveSoundPlayer } from './infrastructure/sound/moveSound';
+import './presentation/styles/matchTheme.css';
 import './styles.css';
 
 function formatClock(seconds = 0) {
@@ -16,12 +20,12 @@ function formatClock(seconds = 0) {
   return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
 }
 
-function PlayerCard({ player, color, active, time, isPaused = false }) {
+function PlayerCard({ player, color, active, time, isPaused = false, seat = '' }) {
   const isRed = color === 'red';
   const clockIsLow = time <= 30 && !isPaused;
 
   return (
-    <section className={`player-card ${active ? 'is-active' : ''} ${isPaused ? 'player-card-paused' : ''}`}>
+    <section className={`player-card ${seat ? `player-card-${seat}` : ''} ${active ? 'is-active' : ''} ${isPaused ? 'player-card-paused' : ''}`}>
       <div className={`player-avatar ${isRed ? 'red' : 'black'}`}>
         {player.name.slice(0, 1)}
       </div>
@@ -189,6 +193,11 @@ function App() {
   const lastMoveKey = lastMove
     ? `${lastMove.color}:${lastMove.from}:${lastMove.to}:${Boolean(lastMove.captured)}`
     : null;
+  // Máy chủ không có API lịch sử nước đi: ghi lại nước cuối mỗi lần nó đổi (xem domain/game/moveHistory.js).
+  // Khoá theo cả matchId của ván: phòng được dùng lại cho ván mới thì danh sách phải bắt đầu lại.
+  const observedMoves = useMemo(() => (lastMove ? [lastMove] : []), [lastMoveKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const totalPly = getTotalPly(match);
+  const moveHistory = useMoveHistory(`${matchId || roomCode}:${match?.matchId ?? ''}`, observedMoves, totalPly);
 
   useEffect(() => {
     if (!match) return;
@@ -254,6 +263,20 @@ function App() {
   const checkedGeneral = checkedColor
     ? match.board.find((piece) => piece.type === 'general' && piece.color === checkedColor)
     : null;
+
+  // Thẻ đối thủ ở đầu cột phải, thẻ của mình ở cuối; khán giả: Đen ở trên, Đỏ ở dưới (cùng chiều bàn cờ)
+  const selfColor = color === 'black' ? 'black' : 'red';
+  const opponentColor = selfColor === 'red' ? 'black' : 'red';
+  const renderPlayerCard = (cardColor, seat) => (
+    <PlayerCard
+      seat={seat}
+      player={match.players[cardColor]}
+      color={cardColor}
+      active={activePlayer === cardColor}
+      time={match.clocks[cardColor]}
+      isPaused={reconnectState.normalClockPaused}
+    />
+  );
 
   return (
     <main className="game-page">
@@ -426,13 +449,6 @@ function App() {
               </div>
             )}
 
-            <PlayerCard
-              player={match.players.black}
-              color="black"
-              active={activePlayer === 'black'}
-              time={match.clocks.black}
-              isPaused={reconnectState.normalClockPaused}
-            />
             <XiangqiBoard
               pieces={match.board}
               countdown={countdown}
@@ -455,17 +471,10 @@ function App() {
               onSelectPiece={requestLegalMoves}
               onMove={sendMove}
             />
-            <PlayerCard
-              player={match.players.red}
-              color="red"
-              active={activePlayer === 'red'}
-              time={match.clocks.red}
-              isPaused={reconnectState.normalClockPaused}
-            />
-            <div className="captured-trays" aria-live="polite">
-              <CapturedTray color="black" pieces={capturedPieces.black} />
-              <CapturedTray color="red" pieces={capturedPieces.red} />
-            </div>
+          </div>
+          <div className="captured-trays" aria-live="polite">
+            <CapturedTray color="black" pieces={capturedPieces.black} />
+            <CapturedTray color="red" pieces={capturedPieces.red} />
           </div>
 
           {/* COT-601 AC 3: Modal kết quả ván đấu do máy chủ trả về */}
@@ -486,7 +495,7 @@ function App() {
                   </p>
                 </div>
                 <div className="result-actions">
-                  <a href="/" className="btn btn-primary btn-large">Về Sảnh Chờ / Danh Sách Phòng</a>
+                  <a href="/" className="mt-btn mt-btn-primary mt-btn-large">Về Sảnh Chờ / Danh Sách Phòng</a>
                 </div>
               </div>
             </div>
@@ -518,28 +527,8 @@ function App() {
           {moveError && <div className="move-alert" role="alert">{moveError}</div>}
         </section>
 
-        <aside className="info-column">
-          {/* COT-629: Cuộc gọi Video WebRTC giữa hai người chơi */}
-          <VideoCallOverlay
-            callStatus={callStatus}
-            incomingCall={incomingCall}
-            remoteStream={remoteStream}
-            localStream={localStream}
-            isMicMuted={isMicMuted}
-            isCamOff={isCamOff}
-            isRemoteCamOff={isRemoteCamOff}
-            isSpectator={readOnly}
-            error={callError || signalingError}
-            notice={callNotice}
-            userName={currentUserName || 'Bạn'}
-            opponentName={opponentUserName || 'Đối thủ'}
-            onStartCall={startCall}
-            onAccept={acceptCall}
-            onReject={rejectCall}
-            onEnd={endCall}
-            onToggleMic={toggleMic}
-            onToggleCam={toggleCam}
-          />
+        <aside className="info-column" aria-label="Thông tin trận đấu">
+          {renderPlayerCard(opponentColor, 'opponent')}
 
           <section className="info-card turn-card">
             <div className="card-heading">
@@ -547,8 +536,8 @@ function App() {
               <h2>Lượt hiện tại</h2>
             </div>
             <div className={`turn-banner ${currentTurn === 'red' ? 'turn-red' : currentTurn === 'black' ? 'turn-black' : ''}`}>
-              <span className={`turn-piece ${currentTurn === 'black' ? 'piece-black' : ''}`}>
-                {currentTurn === 'black' ? '將' : '帥'}
+              <span className={`turn-piece ${currentTurn === 'black' ? 'piece-black' : ''}`} aria-hidden="true">
+                {currentTurn === 'black' ? 'Đen' : 'Đỏ'}
               </span>
               <div>
                 <strong>
@@ -582,6 +571,34 @@ function App() {
               </div>
             )}
           </section>
+
+          <MoveList moves={moveHistory} totalPly={totalPly} />
+
+          {/* COT-629: Cuộc gọi Video WebRTC giữa hai người chơi */}
+          <div className="match-video-slot">
+            <VideoCallOverlay
+              callStatus={callStatus}
+              incomingCall={incomingCall}
+              remoteStream={remoteStream}
+              localStream={localStream}
+              isMicMuted={isMicMuted}
+              isCamOff={isCamOff}
+              isRemoteCamOff={isRemoteCamOff}
+              isSpectator={readOnly}
+              error={callError || signalingError}
+              notice={callNotice}
+              userName={currentUserName || 'Bạn'}
+              opponentName={opponentUserName || 'Đối thủ'}
+              onStartCall={startCall}
+              onAccept={acceptCall}
+              onReject={rejectCall}
+              onEnd={endCall}
+              onToggleMic={toggleMic}
+              onToggleCam={toggleCam}
+            />
+          </div>
+
+          {renderPlayerCard(selfColor, 'self')}
 
           <section className="info-card match-info-card">
             <div className="card-heading">

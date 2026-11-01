@@ -1,0 +1,52 @@
+/*
+ * Giao diện sáng "kem + đỏ son" dùng chung cho hai màn hình trận (PvP/demo và PvE).
+ * Mọi biến và quy tắc đều gắn vào body.match-view (class do chính màn hình trận bật/tắt)
+ * nên sảnh cũ không bị ảnh hưởng.
+ */
+body.match-view {
+  --mt-bg: #f6efe4;
+  --mt-bg-soft: #fbf7f0;
+  --mt-card: #fffdf9;
+  --mt-border: #e3d4bc;
+  --mt-border-strong: #d4bc98;
+  --mt-red: #b8322a;
+  --mt-red-dark: #962720;
+  --mt-red-soft: #f8e5e0;
+  --mt-text: #3b2f2a;
+  --mt-muted: #6e6058;
+  --mt-ok: #2c7a4b;
+  --mt-shadow: 0 1px 2px rgba(80, 50, 30, .06), 0 6px 18px rgba(80, 50, 30, .08);
+  color: var(--mt-text);
+  background:
+    radial-gradient(ellipse at 50% -20%, rgba(255, 255, 255, .8), transparent 60%),
+    var(--mt-bg);
+}
+
+body.match-view :focus-visible {
+  outline: 2px solid var(--mt-red);
+  outline-offset: 2px;
+}
+
+/* Nút dùng chung của màn hình trận (PvE đang dùng .pve-btn, PvP dùng .mt-btn) */
+.mt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border: 1px solid var(--mt-border-strong);
+  border-radius: 8px;
+  background: var(--mt-card);
+  color: var(--mt-text);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+
+.mt-btn:hover:not(:disabled) { border-color: var(--mt-red); background: var(--mt-red-soft); }
+.mt-btn:disabled { opacity: .6; cursor: not-allowed; }
+.mt-btn-primary { border-color: var(--mt-red); background: var(--mt-red); color: #fff; }
+.mt-btn-primary:hover:not(:disabled) { border-color: var(--mt-red-dark); background: var(--mt-red-dark); }
+.mt-btn-danger { border-color: var(--mt-red); color: var(--mt-red-dark); }
+.mt-btn-large { padding: 12px 22px; font-size: 15px; }

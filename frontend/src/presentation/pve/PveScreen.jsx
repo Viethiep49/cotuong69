@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import XiangqiBoard from '../components/board/XiangqiBoard';
+import MoveList from '../components/match/MoveList';
 import { usePveMatch } from '../../application/hooks/usePveMatch';
+import { useMoveHistory } from '../../application/hooks/useMoveHistory';
 import { describeResult, formatClockMs } from '../../domain/pve/pveBoard';
+import '../styles/matchTheme.css';
 import './PveScreen.css';
 
 const SIDE_NAMES = { red: 'Đỏ', black: 'Đen' };
@@ -29,6 +32,8 @@ export default function PveScreen({ matchId, api }) {
     isPlayerTurn, canMove, legalMoves, lastMove, lastMoves, remainingMs,
     makeMove, requestLegalMoves, resign, refresh,
   } = usePveMatch(matchId, { api });
+  // Máy chủ không có API lịch sử nước đi: chỉ ghi các nước thấy được từ khi mở trang (xem moveHistory.js)
+  const moveHistory = useMoveHistory(matchId, lastMoves, match ? match.ply : null);
   const [confirmingResign, setConfirmingResign] = useState(false);
   const [resultDismissed, setResultDismissed] = useState(false);
 
@@ -106,10 +111,6 @@ export default function PveScreen({ matchId, api }) {
 
       <div className="pve-layout">
         <section className="pve-board-column" aria-label="Bàn cờ chơi với máy">
-          <SeatCard kind="bot" color={botColor} active={botThinking}>
-            {botThinking && <span className="pve-chip">ĐANG ĐI</span>}
-          </SeatCard>
-
           <div className="pve-board-wrap">
             <XiangqiBoard
               pieces={pieces}
@@ -127,16 +128,16 @@ export default function PveScreen({ matchId, api }) {
             />
           </div>
 
-          <SeatCard kind="player" color={playerColor} active={isPlayerTurn}>
-            {isPlayerTurn && <span className="pve-chip">LƯỢT BẠN</span>}
-          </SeatCard>
-
           {moveError && (
             <div className="pve-alert" role="alert" data-testid="pve-move-error">{moveError}</div>
           )}
         </section>
 
-        <aside className="pve-side">
+        <aside className="pve-side" aria-label="Thông tin ván đấu">
+          <SeatCard kind="bot" color={botColor} active={botThinking}>
+            {botThinking && <span className="pve-chip">ĐANG ĐI</span>}
+          </SeatCard>
+
           <section className="pve-card" aria-label="Trạng thái ván đấu">
             <h2>Trạng thái</h2>
             <p className={`pve-turn${isPlayerTurn ? ' is-player' : ''}`} data-testid="pve-turn" role="status">{turnText}</p>
@@ -165,6 +166,8 @@ export default function PveScreen({ matchId, api }) {
             )}
           </section>
 
+          <MoveList moves={moveHistory} totalPly={match.ply} />
+
           <div className="pve-actions">
             {!finished ? (
               <button
@@ -185,6 +188,10 @@ export default function PveScreen({ matchId, api }) {
               </>
             )}
           </div>
+
+          <SeatCard kind="player" color={playerColor} active={isPlayerTurn}>
+            {isPlayerTurn && <span className="pve-chip">LƯỢT BẠN</span>}
+          </SeatCard>
         </aside>
       </div>
 
