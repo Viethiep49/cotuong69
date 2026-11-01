@@ -197,9 +197,21 @@
 .pve-result-draw h2 { color: #8a5a12; }
 .pve-result-unknown h2 { color: var(--mt-text, #3b2f2a); }
 
-@media (max-width: 900px) {
+/* Màn hình hẹp: một cột. Hai cột được "trải phẳng" (display: contents) rồi sắp lại bằng order:
+   thẻ đối thủ NGAY TRÊN bàn cờ, thẻ của bạn NGAY DƯỚI bàn cờ, rồi trạng thái, danh sách nước đi, nút hành động. */
+@media (max-width: 1000px) {
   .pve-page { padding: 0 16px 24px; }
-  .pve-layout { grid-template-columns: minmax(0, 1fr); max-width: 640px; margin: 0 auto; }
+  .pve-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; max-width: 640px; margin: 0 auto; }
+  .pve-board-column, .pve-side { display: contents; }
+  .pve-layout > .pve-board-column > *,
+  .pve-layout > .pve-side > * { min-width: 0; }
+  .pve-seat-bot { order: 1; }
+  .pve-board-wrap { order: 2; }
+  .pve-alert { order: 3; }
+  .pve-seat-player { order: 4; }
+  .pve-side > .pve-card { order: 5; }
+  .pve-side > .move-list-card { order: 6; }
+  .pve-actions { order: 7; }
   .pve-topbar { gap: 10px; }
 }
 

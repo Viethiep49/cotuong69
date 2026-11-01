@@ -49,3 +49,4 @@ body.match-view :focus-visible {
 .mt-btn-primary { border-color: var(--mt-red); background: var(--mt-red); color: #fff; }
 .mt-btn-primary:hover:not(:disabled) { border-color: var(--mt-red-dark); background: var(--mt-red-dark); }
 .mt-btn-danger { border-color: var(--mt-red); color: var(--mt-red-dark); }
+.mt-btn-large { padding: 12px 22px; font-size: 15px; }

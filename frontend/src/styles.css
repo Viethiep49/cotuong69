@@ -588,10 +588,35 @@ body.match-view .brand { color: var(--mt-text); }
 .captured-tray-empty { overflow: hidden; color: var(--mt-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .captured-tray > strong { color: var(--mt-text); font: 700 12px "DM Mono", monospace; }
 
+/* Màn hình hẹp: một cột. Hai cột (match-column, info-column) được "trải phẳng" (display: contents) để sắp lại bằng
+   order: thẻ đối thủ NGAY TRÊN bàn cờ, thẻ của mình NGAY DƯỚI bàn cờ, rồi trạng thái, danh sách nước đi, ... */
 @media (max-width: 1000px) {
   .game-page { padding: 0 20px; }
-  .game-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-top: 22px; }
-  .info-column { max-width: 620px; width: 100%; margin: 0 auto; }
+  .game-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; padding-top: 22px; }
+  .match-column, .info-column { display: contents; }
+  .game-layout > .match-column > *,
+  .game-layout > .info-column > * {
+    width: 100%;
+    max-width: 620px;
+    min-width: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    justify-self: center;
+  }
+  .game-layout .player-card-opponent { order: 1; }
+  .game-layout .opponent-disconnect-banner { order: 2; }
+  .game-layout .check-alert { order: 3; }
+  .game-layout .board-shell { order: 4; }
+  .game-layout .player-card-self { order: 5; }
+  .game-layout .captured-trays { order: 6; }
+  .game-layout .spectator-note { order: 7; }
+  .game-layout .move-alert { order: 8; }
+  .game-layout .turn-card { order: 9; }
+  .game-layout .move-list-card { order: 10; }
+  .game-layout .match-video-slot { order: 11; }
+  .game-layout .match-info-card { order: 12; }
+  .game-layout .guide-card { order: 13; }
+  .game-layout .connection-state { order: 14; }
 }
 
 @media (max-width: 700px) {
