@@ -149,9 +149,15 @@ class BoardSyncManager {
       capturedPieces,
       currentTurn,
       turnRemainingSeconds,
+      // Phòng thật gửi plyCount (số nước đã đi, tính từng bên); ván demo gửi moveNumber (đếm theo cặp nước)
       moveNumber: snapshot.plyCount !== undefined
         ? Number(snapshot.plyCount) + 1
-        : (previousMatch?.moveNumber ?? 1),
+        : (snapshot.moveNumber !== undefined
+          ? Number(snapshot.moveNumber)
+          : (previousMatch?.moveNumber ?? 1)),
+      plyCount: snapshot.plyCount !== undefined
+        ? Number(snapshot.plyCount)
+        : (previousMatch?.plyCount ?? null),
       timeControlSeconds: snapshot.timeControlSeconds !== undefined
         ? Number(snapshot.timeControlSeconds)
         : (previousMatch?.timeControlSeconds ?? 300),

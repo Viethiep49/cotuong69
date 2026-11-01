@@ -353,7 +353,7 @@ describe('PveScreen', () => {
   describe('danh sách nước đi', () => {
     it('bắt đầu rỗng; sau khi đi, hiện hàng "1. a3→a4 | a6→a5" (Đỏ rồi Đen) theo đúng thứ tự nước đã thấy', async () => {
       const { svg } = await mountLoaded();
-      const region = screen.getByRole('region', { name: 'Lịch sử nước đi' });
+      const region = screen.getByRole('region', { name: 'Nước đi' });
       expect(within(region).getByText('Chưa có nước đi nào.')).toBeInTheDocument();
       expect(within(region).queryByTestId('move-list-partial-note')).toBeNull();
 
@@ -379,7 +379,21 @@ describe('PveScreen', () => {
       await mountLoaded();
       expect(screen.getByTestId('pve-ply')).toHaveTextContent('2');
       expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+      expect(screen.getByText('Chưa ghi nhận nước nào từ khi mở trang.')).toBeInTheDocument();
+      expect(screen.queryByText('Chưa có nước đi nào.')).toBeNull();
       expect(screen.getByTestId('move-list-partial-note')).toHaveTextContent('Lịch sử chỉ gồm các nước từ khi mở trang');
+    });
+
+    it('người chơi cầm Đen, máy đã đi nước đầu: không bịa nước đó, báo lịch sử chỉ gồm các nước từ khi mở trang', async () => {
+      server = createFakePveServer({ playerColor: 'black' });
+      fetch.mockImplementation(server.fetch);
+      await mountLoaded();
+
+      expect(screen.getByTestId('pve-ply')).toHaveTextContent('1');
+      expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+      expect(screen.getByText('Chưa ghi nhận nước nào từ khi mở trang.')).toBeInTheDocument();
+      expect(screen.getByTestId('move-list-partial-note')).toBeInTheDocument();
+      expect(screen.queryByText(/a3→a4/)).toBeNull();
     });
   });
 

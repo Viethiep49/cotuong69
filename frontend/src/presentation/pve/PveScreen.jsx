@@ -33,7 +33,7 @@ export default function PveScreen({ matchId, api }) {
     makeMove, requestLegalMoves, resign, refresh,
   } = usePveMatch(matchId, { api });
   // Máy chủ không có API lịch sử nước đi: chỉ ghi các nước thấy được từ khi mở trang (xem moveHistory.js)
-  const moveHistory = useMoveHistory(matchId, lastMoves);
+  const moveHistory = useMoveHistory(matchId, lastMoves, match ? match.ply : null);
   const [confirmingResign, setConfirmingResign] = useState(false);
   const [resultDismissed, setResultDismissed] = useState(false);
 

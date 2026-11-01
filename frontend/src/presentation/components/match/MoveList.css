@@ -93,3 +93,12 @@
 
 .move-list-empty { padding: 14px 8px; text-align: center; }
 .move-list-note { padding-top: 8px; border-top: 1px dashed var(--mt-border, #e3d4bc); font-style: italic; }
+
+.move-row-gap { color: var(--mt-muted, #6e6058); }
+.move-row-gap .move-no { font-weight: 700; letter-spacing: .1em; }
+.move-gap-text { grid-column: 2 / -1; font-size: 12px; font-style: italic; }
+
+.move-list-scroll:focus-visible {
+  outline: 2px solid var(--mt-red, #b8322a);
+  outline-offset: 2px;
+}

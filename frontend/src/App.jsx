@@ -9,6 +9,7 @@ import { useMoveHistory } from './application/hooks/useMoveHistory';
 import { useWebRtcCall } from './application/hooks/useWebRtcCall';
 import { parseRoomCodeParam } from './domain/network/roomCodeParam';
 import { BoardSyncManager } from './domain/game/boardSyncManager';
+import { getTotalPly } from './domain/game/moveHistory';
 import { moveSoundPlayer } from './infrastructure/sound/moveSound';
 import './presentation/styles/matchTheme.css';
 import './styles.css';
@@ -19,12 +20,12 @@ function formatClock(seconds = 0) {
   return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
 }
 
-function PlayerCard({ player, color, active, time, isPaused = false }) {
+function PlayerCard({ player, color, active, time, isPaused = false, seat = '' }) {
   const isRed = color === 'red';
   const clockIsLow = time <= 30 && !isPaused;
 
   return (
-    <section className={`player-card ${active ? 'is-active' : ''} ${isPaused ? 'player-card-paused' : ''}`}>
+    <section className={`player-card ${seat ? `player-card-${seat}` : ''} ${active ? 'is-active' : ''} ${isPaused ? 'player-card-paused' : ''}`}>
       <div className={`player-avatar ${isRed ? 'red' : 'black'}`}>
         {player.name.slice(0, 1)}
       </div>
@@ -192,9 +193,11 @@ function App() {
   const lastMoveKey = lastMove
     ? `${lastMove.color}:${lastMove.from}:${lastMove.to}:${Boolean(lastMove.captured)}`
     : null;
-  // Máy chủ không có API lịch sử nước đi: ghi lại nước cuối mỗi lần nó đổi (xem domain/game/moveHistory.js)
+  // Máy chủ không có API lịch sử nước đi: ghi lại nước cuối mỗi lần nó đổi (xem domain/game/moveHistory.js).
+  // Khoá theo cả matchId của ván: phòng được dùng lại cho ván mới thì danh sách phải bắt đầu lại.
   const observedMoves = useMemo(() => (lastMove ? [lastMove] : []), [lastMoveKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const moveHistory = useMoveHistory(matchId || roomCode, observedMoves);
+  const totalPly = getTotalPly(match);
+  const moveHistory = useMoveHistory(`${matchId || roomCode}:${match?.matchId ?? ''}`, observedMoves, totalPly);
 
   useEffect(() => {
     if (!match) return;
@@ -264,8 +267,9 @@ function App() {
   // Thẻ đối thủ ở đầu cột phải, thẻ của mình ở cuối; khán giả: Đen ở trên, Đỏ ở dưới (cùng chiều bàn cờ)
   const selfColor = color === 'black' ? 'black' : 'red';
   const opponentColor = selfColor === 'red' ? 'black' : 'red';
-  const renderPlayerCard = (cardColor) => (
+  const renderPlayerCard = (cardColor, seat) => (
     <PlayerCard
+      seat={seat}
       player={match.players[cardColor]}
       color={cardColor}
       active={activePlayer === cardColor}
@@ -491,7 +495,7 @@ function App() {
                   </p>
                 </div>
                 <div className="result-actions">
-                  <a href="/" className="btn btn-primary btn-large">Về Sảnh Chờ / Danh Sách Phòng</a>
+                  <a href="/" className="mt-btn mt-btn-primary mt-btn-large">Về Sảnh Chờ / Danh Sách Phòng</a>
                 </div>
               </div>
             </div>
@@ -524,7 +528,7 @@ function App() {
         </section>
 
         <aside className="info-column" aria-label="Thông tin trận đấu">
-          {renderPlayerCard(opponentColor)}
+          {renderPlayerCard(opponentColor, 'opponent')}
 
           <section className="info-card turn-card">
             <div className="card-heading">
@@ -568,31 +572,33 @@ function App() {
             )}
           </section>
 
-          <MoveList moves={moveHistory} totalPly={roomCode ? match.moveNumber - 1 : null} />
+          <MoveList moves={moveHistory} totalPly={totalPly} />
 
           {/* COT-629: Cuộc gọi Video WebRTC giữa hai người chơi */}
-          <VideoCallOverlay
-            callStatus={callStatus}
-            incomingCall={incomingCall}
-            remoteStream={remoteStream}
-            localStream={localStream}
-            isMicMuted={isMicMuted}
-            isCamOff={isCamOff}
-            isRemoteCamOff={isRemoteCamOff}
-            isSpectator={readOnly}
-            error={callError || signalingError}
-            notice={callNotice}
-            userName={currentUserName || 'Bạn'}
-            opponentName={opponentUserName || 'Đối thủ'}
-            onStartCall={startCall}
-            onAccept={acceptCall}
-            onReject={rejectCall}
-            onEnd={endCall}
-            onToggleMic={toggleMic}
-            onToggleCam={toggleCam}
-          />
+          <div className="match-video-slot">
+            <VideoCallOverlay
+              callStatus={callStatus}
+              incomingCall={incomingCall}
+              remoteStream={remoteStream}
+              localStream={localStream}
+              isMicMuted={isMicMuted}
+              isCamOff={isCamOff}
+              isRemoteCamOff={isRemoteCamOff}
+              isSpectator={readOnly}
+              error={callError || signalingError}
+              notice={callNotice}
+              userName={currentUserName || 'Bạn'}
+              opponentName={opponentUserName || 'Đối thủ'}
+              onStartCall={startCall}
+              onAccept={acceptCall}
+              onReject={rejectCall}
+              onEnd={endCall}
+              onToggleMic={toggleMic}
+              onToggleCam={toggleCam}
+            />
+          </div>
 
-          {renderPlayerCard(selfColor)}
+          {renderPlayerCard(selfColor, 'self')}
 
           <section className="info-card match-info-card">
             <div className="card-heading">
