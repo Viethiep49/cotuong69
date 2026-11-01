@@ -1,0 +1,95 @@
+.move-list-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--mt-border, #e3d4bc);
+  border-radius: 12px;
+  background: var(--mt-card, #fffdf9);
+  box-shadow: var(--mt-shadow, 0 1px 2px rgba(80, 50, 30, .06), 0 6px 18px rgba(80, 50, 30, .08));
+  color: var(--mt-text, #3b2f2a);
+}
+
+.move-list-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.move-list-heading h2 {
+  margin: 0;
+  color: var(--mt-red, #b8322a);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.move-list-count { color: var(--mt-muted, #6e6058); font-size: 12px; }
+
+.move-list-columns,
+.move-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.move-list-columns {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--mt-border, #e3d4bc);
+  color: var(--mt-muted, #6e6058);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.move-list-scroll {
+  max-height: 232px;
+  min-height: 96px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.move-list { margin: 0; padding: 0; list-style: none; }
+
+.move-row {
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.move-row:nth-child(even) { background: rgba(227, 212, 188, .28); }
+
+.move-no { color: var(--mt-muted, #6e6058); font-size: 12px; }
+
+.move-cell { min-width: 0; padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
+.move-cell-red .move-text { color: var(--mt-red, #b8322a); font-weight: 600; }
+.move-cell-black .move-text { color: #2b2623; font-weight: 600; }
+.move-cell.is-empty { color: var(--mt-muted, #6e6058); }
+.move-cell.is-latest { background: rgba(184, 50, 42, .12); box-shadow: inset 0 0 0 1px rgba(184, 50, 42, .35); }
+
+/* Tên bên chỉ để trình đọc màn hình; cột tiêu đề đã nói rõ Đỏ/Đen cho người nhìn */
+.move-side-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.move-list-empty,
+.move-list-note {
+  margin: 8px 0 0;
+  color: var(--mt-muted, #6e6058);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.move-list-empty { padding: 14px 8px; text-align: center; }
+.move-list-note { padding-top: 8px; border-top: 1px dashed var(--mt-border, #e3d4bc); font-style: italic; }
