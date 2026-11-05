@@ -448,10 +448,22 @@ if (require.main === module) {
   }
 
   server.pveSweeper.start(); // FE-10: máy đi bù / xử hết giờ cho trận PvE bỏ dở
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`Match API listening on http://localhost:${port}`);
-    console.log('Development match: GET /api/matches/COT-615; WebSocket /api/matches/COT-615/ws');
-  });
+
+  // Ván PvP còn PLAYING trong DB là ván bị bỏ dở do server tắt (phòng chỉ sống trong RAM).
+  // Chốt ABORTED TRƯỚC khi nhận kết nối để không đụng nhầm ván mới.
+  const PgPvpMatchRepository = require('./infrastructure/database/repositories/PgPvpMatchRepository');
+  new PgPvpMatchRepository()
+    .abortUnfinished()
+    .then((count) => {
+      if (count > 0) console.warn(`[pvp_match_states] Huỷ ${count} ván PvP bỏ dở từ lần chạy trước.`);
+    })
+    .catch((err) => console.error('[pvp_match_states] Không huỷ được ván bỏ dở:', err.message))
+    .finally(() => {
+      server.listen(port, '127.0.0.1', () => {
+        console.log(`Match API listening on http://localhost:${port}`);
+        console.log('Development match: GET /api/matches/COT-615; WebSocket /api/matches/COT-615/ws');
+      });
+    });
 
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {

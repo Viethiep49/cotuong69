@@ -145,6 +145,8 @@ class RoomHub {
     this.turnTimers = new Map(); // roomCode -> Timeout
     // BE-07: rate limit chat theo từng socket (5 tin / 3 giây)
     this.chatRate = new Map(); // socket -> number[] (timestamps)
+    // Hàng đợi ghi bàn cờ PvP xuống DB theo từng phòng (giữ đúng thứ tự nước đi)
+    this.pvpPersistChains = new Map(); // roomCode -> Promise
     this.heartbeatTimer = null;
 
     this.setupWss();
@@ -611,6 +613,7 @@ class RoomHub {
       }
       try {
         const startResult = room.startGame(meta.userId);
+        if (!startResult.alreadyStarted) this.persistLiveState(room);
         this.broadcastToRoom(room.code, {
           type: 'GameStarted',
           matchId: startResult.matchId,
@@ -717,6 +720,14 @@ class RoomHub {
       if (clocks && Number.isFinite(Number(clocks[playerColor]))) {
         clocks[playerColor] = Math.max(0, Number(clocks[playerColor]) - elapsedMs / 1000);
       }
+
+      // Lưu nước đi + thế cờ mới xuống DB (không chặn broadcast, giữ thứ tự theo phòng)
+      this.persistMove(room, {
+        side: playerColor,
+        from: payload.from,
+        to: payload.to,
+        capturedType: moveResult.capturedPiece ? moveResult.capturedPiece.type : null,
+      });
 
       // BE-04: chiếu bí / hết nước đi -> kết thúc trận đúng cách qua settleMatch
       if (moveResult.endReason || room.status === 'FINISHED' || room.matchState.status === 'completed') {
@@ -1438,6 +1449,83 @@ class RoomHub {
   }
 
   /**
+   * Chụp thế cờ hiện tại thành bản ghi cho pvp_match_states. Chạy ĐỒNG BỘ ngay lúc gọi
+   * (matchState còn bị sửa tiếp bởi nước sau), phần ghi DB chạy sau trong hàng đợi.
+   * @param {object} room
+   * @param {'PLAYING'|'FINISHED'|'ABORTED'} status
+   */
+  buildLiveStateRecord(room, status = 'PLAYING') {
+    const ms = room.matchState;
+    return {
+      matchId: ms.matchId || room.matchId,
+      roomCode: room.code,
+      redUserId: room.players.red ? room.players.red.id : null,
+      blackUserId: room.players.black ? room.players.black.id : null,
+      status,
+      board: JSON.parse(JSON.stringify(ms.board || [])),
+      currentTurn: ms.currentTurn,
+      ply: Number(ms.plyCount) || 0,
+      remainingClocks: ms.remainingClocks ? { ...ms.remainingClocks } : null,
+      capturedPieces: ms.capturedPieces ? JSON.parse(JSON.stringify(ms.capturedPieces)) : null,
+      endReason: status === 'PLAYING' ? null : (ms.endReason || null),
+    };
+  }
+
+  /**
+   * Xếp việc ghi DB vào hàng đợi của phòng: các ghi của cùng phòng chạy tuần tự
+   * (snapshot ply N không bao giờ đè lên ply N+1). Best-effort: lỗi DB chỉ log,
+   * không làm hỏng ván đang chơi.
+   * @returns {Promise<void>}
+   */
+  queuePvpPersist(roomCode, task, label) {
+    const prev = this.pvpPersistChains.get(roomCode) || Promise.resolve();
+    const next = prev
+      .then(task)
+      .catch((err) => console.error(`[pvp_match_states] ${label}:`, err.message));
+    this.pvpPersistChains.set(roomCode, next);
+    next.then(() => {
+      if (this.pvpPersistChains.get(roomCode) === next) this.pvpPersistChains.delete(roomCode);
+    });
+    return next;
+  }
+
+  /** Lưu snapshot thế cờ (bắt đầu ván / kết thúc ván). */
+  persistLiveState(room, status = 'PLAYING') {
+    const repo = this.pvpMatchRepository;
+    if (!repo || typeof repo.saveLiveState !== 'function' || !room || !room.matchState) {
+      return Promise.resolve();
+    }
+    const record = this.buildLiveStateRecord(room, status);
+    return this.queuePvpPersist(room.code, () => repo.saveLiveState(record), `saveLiveState ${status}`);
+  }
+
+  /** Lưu 1 nước đi vừa được chấp nhận + snapshot sau nước đó. */
+  persistMove(room, { side, from, to, capturedType }) {
+    const repo = this.pvpMatchRepository;
+    if (!repo || typeof repo.recordMove !== 'function' || !room || !room.matchState) {
+      return Promise.resolve();
+    }
+    const state = this.buildLiveStateRecord(room, 'PLAYING');
+    const moved = state.board.find((p) => p.position === to);
+    const move = {
+      matchId: state.matchId,
+      ply: state.ply,
+      side,
+      pieceType: moved ? moved.type : 'unknown',
+      from,
+      to,
+      capturedType: capturedType || null,
+    };
+    return this.queuePvpPersist(room.code, () => repo.recordMove(move, state), `recordMove ply ${move.ply}`);
+  }
+
+  /** Chờ mọi lần ghi bàn cờ đang xếp hàng của phòng hoàn tất (dùng khi tắt server / test). */
+  flushPvpPersistence(roomCode) {
+    if (roomCode !== undefined) return this.pvpPersistChains.get(roomCode) || Promise.resolve();
+    return Promise.all(Array.from(this.pvpPersistChains.values())).then(() => undefined);
+  }
+
+  /**
    * BE-04: KẾT THÚC VÁN ĐẤU ở một chỗ duy nhất.
    * Trước đây Room.applyMove tự set status FINISHED nhưng hub chỉ broadcast moveResult
    * -> không có matchEnded, không cập nhật Elo, không ghi history, phòng FINISHED
@@ -1485,6 +1573,8 @@ class RoomHub {
     room.readyStates.clear();
     this.clearDisconnectTimer(room.code);
     this.clearTurnTimer(room.code);
+    // Chốt snapshot cuối: huỷ do sự cố -> ABORTED, còn lại FINISHED
+    this.persistLiveState(room, endReason === 'SYSTEM_ERROR' ? 'ABORTED' : 'FINISHED');
 
     // REV2-03: bắt đầu ghi kết quả (phần đồng bộ của persistSettlement đã chụp winner/loser),
     // rồi GỠ GHẾ NGAY (đồng bộ) trước khi await. Trước đây ghế chỉ bị gỡ sau await nên
